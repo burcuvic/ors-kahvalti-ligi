@@ -1281,28 +1281,10 @@ export default function Home() {
             </button>
           </div>
 
-          <div className="mt-5 flex flex-wrap items-center gap-3 rounded-3xl border border-amber-100 bg-amber-50/40 p-4">
-            <div className="mr-2 flex items-center gap-2">
-              <span className="text-lg">🏆</span>
-              <span className="text-sm font-black uppercase tracking-wide text-slate-500">
-                Turnuva Aşaması
-              </span>
-            </div>
-
-            {STAGES.map((stage) => (
-              <button
-                key={stage}
-                onClick={() => setSelectedStage(stage)}
-                className={`rounded-xl px-4 py-2 font-black transition ${
-                  selectedStage === stage
-                    ? "bg-red-500 text-white shadow-lg shadow-red-200"
-                    : "bg-white text-slate-700 hover:bg-amber-100"
-                }`}
-              >
-                {stage}
-              </button>
-            ))}
-          </div>
+          <StageFilter
+            selectedStage={selectedStage}
+            setSelectedStage={setSelectedStage}
+          />
         </header>
 
         <TodayMiniPanel matches={matches} />
@@ -1343,6 +1325,13 @@ export default function Home() {
                 </div>
               </div>
             </div>
+
+            <ActivityFeed
+              players={players}
+              matches={matches}
+              predictions={predictions}
+              bonusLogs={bonusLogs}
+            />
 
             <div className="mb-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
               <h3 className="mb-3 text-xl font-black">🏆 Şampiyon Tahmini</h3>
@@ -1663,6 +1652,15 @@ export default function Home() {
                 value={`%${profilePlayer.success_rate || 0}`}
               />
             </div>
+
+            <BadgeShowcase
+              player={profilePlayer}
+              rank={
+                sortedPlayers.findIndex((p) => p.id === profilePlayer.id) + 1
+              }
+              streak={playerStreaks[profilePlayer.id] || 0}
+              players={players}
+            />
 
             <div className="mb-6 grid gap-3 md:grid-cols-4">
               <ProfileInsightCard
@@ -2068,6 +2066,285 @@ function FilterButtons({
           {filter}
         </button>
       ))}
+    </div>
+  );
+}
+
+
+
+function getPlayerBadges({
+  player,
+  rank,
+  streak,
+  players,
+}: {
+  player: Player;
+  rank: number;
+  streak: number;
+  players: Player[];
+}) {
+  const maxBlank = Math.max(...players.map((p) => Number(p.intentional_blank || 0)), 0);
+  const maxBonus = Math.max(...players.map((p) => Number(p.bonus_points || 0)), 0);
+
+  const badges: { icon: string; title: string; note: string; color: string }[] = [];
+
+  if (rank === 1) {
+    badges.push({
+      icon: "👑",
+      title: "Lider",
+      note: "Zirvede geziyor",
+      color: "bg-amber-100 text-amber-800 border-amber-200",
+    });
+  }
+
+  if (streak >= 5) {
+    badges.push({
+      icon: "🔥",
+      title: "Alev Adam",
+      note: `${streak} maçlık seri`,
+      color: "bg-red-100 text-red-700 border-red-200",
+    });
+  } else if (streak >= 3) {
+    badges.push({
+      icon: "⚡",
+      title: "Formda",
+      note: `${streak} maçlık seri`,
+      color: "bg-orange-100 text-orange-700 border-orange-200",
+    });
+  }
+
+  if (Number(player.success_rate || 0) >= 70) {
+    badges.push({
+      icon: "🧠",
+      title: "Oracle",
+      note: "Tahmin gücü yüksek",
+      color: "bg-purple-100 text-purple-700 border-purple-200",
+    });
+  }
+
+  if (Number(player.intentional_blank || 0) === maxBlank && maxBlank > 0) {
+    badges.push({
+      icon: "🥯",
+      title: "Kahvaltıdan Kaçan",
+      note: `${maxBlank} maç kaçırdı`,
+      color: "bg-yellow-100 text-yellow-800 border-yellow-200",
+    });
+  }
+
+  if (Number(player.bonus_points || 0) === maxBonus && maxBonus > 0) {
+    badges.push({
+      icon: "🎁",
+      title: "Bonus Avcısı",
+      note: `${maxBonus} ek puan`,
+      color: "bg-green-100 text-green-700 border-green-200",
+    });
+  }
+
+  if (badges.length === 0) {
+    badges.push({
+      icon: "🐣",
+      title: "Isınıyor",
+      note: "Büyük patlama bekleniyor",
+      color: "bg-slate-100 text-slate-700 border-slate-200",
+    });
+  }
+
+  return badges.slice(0, 5);
+}
+
+function BadgeShowcase({
+  player,
+  rank,
+  streak,
+  players,
+}: {
+  player: Player;
+  rank: number;
+  streak: number;
+  players: Player[];
+}) {
+  const badges = getPlayerBadges({ player, rank, streak, players });
+
+  return (
+    <div className="mb-6 rounded-[2rem] border border-amber-100 bg-white p-5 shadow-xl shadow-red-100/50">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h3 className="text-xl font-black">🏅 Rozet Vitrini</h3>
+        <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-700">
+          {badges.length} rozet
+        </span>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        {badges.map((badge) => (
+          <div
+            key={badge.title}
+            className={`rounded-[1.5rem] border p-4 ${badge.color}`}
+          >
+            <div className="text-3xl">{badge.icon}</div>
+            <div className="mt-2 text-lg font-black">{badge.title}</div>
+            <div className="text-sm font-bold opacity-80">{badge.note}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ActivityFeed({
+  players,
+  matches,
+  predictions,
+  bonusLogs,
+}: {
+  players: Player[];
+  matches: Match[];
+  predictions: Prediction[];
+  bonusLogs: BonusLog[];
+}) {
+  const feed = useMemo(() => {
+    const predictionItems = predictions
+      .map((prediction) => {
+        const player = players.find((p) => p.id === prediction.player_id);
+        const match = matches.find((m) => m.id === prediction.match_id);
+        if (!player || !match) return null;
+
+        return {
+          id: `p-${prediction.id}`,
+          time: new Date(match.match_time).getTime(),
+          icon: prediction.points > 0 ? "✅" : prediction.points < 0 ? "🥯" : "🎯",
+          title:
+            prediction.points > 0
+              ? `${player.name} doğru bildi`
+              : prediction.points < 0
+              ? `${player.name} puan kaybetti`
+              : `${player.name} tahmin yaptı`,
+          detail: `${match.home_team} - ${match.away_team} • ${prediction.prediction}`,
+          score: prediction.points,
+        };
+      })
+      .filter(Boolean);
+
+    const bonusItems = bonusLogs
+      .slice(0, 20)
+      .map((bonus) => {
+        const player = players.find((p) => p.id === bonus.player_id);
+        if (!player) return null;
+
+        return {
+          id: `b-${bonus.id}`,
+          time: new Date(bonus.created_at).getTime(),
+          icon: "🎁",
+          title: `${player.name} bonus aldı`,
+          detail: bonus.reason || "Ek puan",
+          score: bonus.points,
+        };
+      })
+      .filter(Boolean);
+
+    return [...predictionItems, ...bonusItems]
+      .sort((a: any, b: any) => b.time - a.time)
+      .slice(0, 8);
+  }, [players, matches, predictions, bonusLogs]);
+
+  if (feed.length === 0) {
+    return (
+      <MascotEmpty text="Henüz hareket yok. İlk tahmini yapan tarihe geçer 😄" />
+    );
+  }
+
+  return (
+    <div className="mb-6 rounded-[2rem] border border-amber-100 bg-white p-5 shadow-xl shadow-red-100/50">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h3 className="text-xl font-black">📣 Son Hareketler</h3>
+        <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-black text-red-600">
+          Canlı feed
+        </span>
+      </div>
+
+      <div className="space-y-2">
+        {feed.map((item: any) => (
+          <div
+            key={item.id}
+            className="flex items-center justify-between gap-3 rounded-[1.25rem] bg-amber-50/60 p-3"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-xl shadow-sm">
+                {item.icon}
+              </div>
+              <div>
+                <div className="font-black">{item.title}</div>
+                <div className="text-xs font-bold text-slate-500">
+                  {item.detail}
+                </div>
+              </div>
+            </div>
+
+            <div
+              className={`rounded-full px-3 py-1 text-sm font-black ${
+                Number(item.score || 0) > 0
+                  ? "bg-green-100 text-green-700"
+                  : Number(item.score || 0) < 0
+                  ? "bg-red-100 text-red-700"
+                  : "bg-slate-100 text-slate-600"
+              }`}
+            >
+              {Number(item.score || 0) > 0 ? "+" : ""}
+              {item.score || 0}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StageFilter({
+  selectedStage,
+  setSelectedStage,
+}: {
+  selectedStage: string;
+  setSelectedStage: (stage: string) => void;
+}) {
+  const groups = [
+    { title: "Genel", items: ["Tümü"] },
+    { title: "Grup", items: ["Gruplar"] },
+    { title: "Eleme", items: ["Son 32", "Son 16", "Çeyrek Final", "Yarı Final", "Üçüncülük", "Final"] },
+  ];
+
+  return (
+    <div className="mt-4 rounded-[1.75rem] border border-amber-100 bg-gradient-to-r from-amber-50 to-red-50 p-3 md:mt-5 md:p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="text-xl">🏆</span>
+        <span className="text-sm font-black uppercase tracking-wide text-slate-500">
+          Turnuva Aşaması
+        </span>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-[0.7fr_0.7fr_3fr]">
+        {groups.map((group) => (
+          <div key={group.title} className="rounded-[1.25rem] bg-white/70 p-2">
+            <div className="mb-2 px-2 text-[10px] font-black uppercase tracking-wide text-slate-400">
+              {group.title}
+            </div>
+
+            <div className="flex gap-2 overflow-x-auto md:flex-wrap">
+              {group.items.map((stage) => (
+                <button
+                  key={stage}
+                  onClick={() => setSelectedStage(stage)}
+                  className={`shrink-0 rounded-2xl px-4 py-2 text-sm font-black transition ${
+                    selectedStage === stage
+                      ? "bg-red-500 text-white shadow-lg shadow-red-200"
+                      : "bg-white text-slate-700 hover:bg-amber-100"
+                  }`}
+                >
+                  {stage}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
