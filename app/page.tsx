@@ -17,10 +17,11 @@ import {
 
 const supabase = createClient(
   "https://mqjgemndxkuufjaeyhjb.supabase.co",
-  "sb_publishable_ZcaB2PBtdaBJ6blYdd4wPA_872a5OfE",
+  "sb_publishable_ZcaB2PBtdaBJ6blYdd4wPA_872a5OfE"
 );
 
 const ADMIN_PASSWORD = "ors2026";
+const MASCOT_SRC = "/ors-mascot.png";
 
 type Player = {
   id: string;
@@ -78,14 +79,7 @@ const STAGES = [
   "Final",
 ];
 
-const MATCH_FILTERS = [
-  "Açık",
-  "Bugün",
-  "Yarın",
-  "Başlayanlar",
-  "Kapalı",
-  "Tümü",
-];
+const MATCH_FILTERS = ["Açık", "Bugün", "Yarın", "Başlayanlar", "Tümü"];
 
 const PLAYER_COLORS = [
   "#f59e0b",
@@ -176,6 +170,184 @@ function TeamName({ team }: { team: string }) {
   );
 }
 
+
+const COUNTRY_THEMES: Record<
+  string,
+  { card: string; glow: string; label: string; name: string }
+> = {
+  Türkiye: {
+    card: "from-red-500 to-red-700",
+    glow: "shadow-red-200",
+    label: "text-red-700 bg-red-50 border-red-200",
+    name: "Ay-Yıldız Ruhlu",
+  },
+  Brezilya: {
+    card: "from-yellow-300 to-green-500",
+    glow: "shadow-green-200",
+    label: "text-green-700 bg-green-50 border-green-200",
+    name: "Samba Tahmincisi",
+  },
+  Arjantin: {
+    card: "from-sky-300 to-blue-500",
+    glow: "shadow-sky-200",
+    label: "text-sky-700 bg-sky-50 border-sky-200",
+    name: "Tango Oracle",
+  },
+  Almanya: {
+    card: "from-slate-900 to-red-600",
+    glow: "shadow-slate-200",
+    label: "text-slate-800 bg-slate-50 border-slate-200",
+    name: "Panzer Disiplini",
+  },
+  Fransa: {
+    card: "from-blue-700 to-red-500",
+    glow: "shadow-blue-200",
+    label: "text-blue-700 bg-blue-50 border-blue-200",
+    name: "Horoz Modu",
+  },
+  İngiltere: {
+    card: "from-red-500 to-slate-100",
+    glow: "shadow-red-100",
+    label: "text-red-700 bg-red-50 border-red-200",
+    name: "It’s Coming Home",
+  },
+  İspanya: {
+    card: "from-red-500 to-yellow-400",
+    glow: "shadow-yellow-200",
+    label: "text-red-700 bg-yellow-50 border-yellow-200",
+    name: "La Roja",
+  },
+  Hollanda: {
+    card: "from-orange-400 to-orange-600",
+    glow: "shadow-orange-200",
+    label: "text-orange-700 bg-orange-50 border-orange-200",
+    name: "Portakal Gücü",
+  },
+  Portekiz: {
+    card: "from-red-600 to-green-600",
+    glow: "shadow-green-200",
+    label: "text-green-700 bg-green-50 border-green-200",
+    name: "Seleção das Quinas",
+  },
+  Japonya: {
+    card: "from-white to-red-400",
+    glow: "shadow-red-100",
+    label: "text-red-700 bg-red-50 border-red-200",
+    name: "Samuray Tahminci",
+  },
+  Meksika: {
+    card: "from-green-500 to-red-500",
+    glow: "shadow-green-200",
+    label: "text-green-700 bg-green-50 border-green-200",
+    name: "El Tri Enerjisi",
+  },
+  Fas: {
+    card: "from-red-600 to-emerald-500",
+    glow: "shadow-red-200",
+    label: "text-red-700 bg-red-50 border-red-200",
+    name: "Atlas Aslanı",
+  },
+};
+
+function getCountryTheme(team?: string | null) {
+  if (!team) {
+    return {
+      card: "from-amber-300 to-orange-300",
+      glow: "shadow-amber-100",
+      label: "text-amber-700 bg-amber-50 border-amber-200",
+      name: "Tarafsız Kuş",
+    };
+  }
+
+  return (
+    COUNTRY_THEMES[team] || {
+      card: "from-amber-300 to-orange-300",
+      glow: "shadow-amber-100",
+      label: "text-amber-700 bg-amber-50 border-amber-200",
+      name: "Sürpriz Takımcı",
+    }
+  );
+}
+
+function ProfileMascotCard({
+  player,
+  rank,
+  streak,
+}: {
+  player: Player;
+  rank: number;
+  streak: number;
+}) {
+  const theme = getCountryTheme(player.champion_team);
+
+  return (
+    <div
+      className={`relative mb-6 overflow-hidden rounded-[2.25rem] bg-gradient-to-br ${theme.card} p-6 text-slate-950 shadow-2xl ${theme.glow}`}
+    >
+      <div className="absolute -right-10 -top-12 h-56 w-56 rounded-full bg-white/25" />
+      <div className="absolute -bottom-20 left-8 h-48 w-48 rounded-full bg-white/20" />
+      <div className="absolute right-8 bottom-8 hidden text-8xl opacity-20 md:block">🏆</div>
+
+      <div className="relative flex flex-wrap items-center justify-between gap-6">
+        <div className="flex flex-wrap items-center gap-5">
+          <div className="relative">
+            <div className="absolute inset-0 rounded-full bg-white/50 blur-2xl" />
+            <img
+              src={MASCOT_SRC}
+              alt="ORS maskotu"
+              className="relative h-52 w-52 object-contain drop-shadow-2xl md:h-64 md:w-64"
+            />
+          </div>
+
+          <div>
+            <div className="text-sm font-black uppercase tracking-wide opacity-75">
+              Oyuncu Kartı
+            </div>
+
+            <div className="text-4xl font-black leading-none">
+              {player.name}
+            </div>
+
+            <div className="mt-3 text-sm font-black uppercase tracking-wide opacity-70">
+              {theme.name}
+            </div>
+
+            <div className="mt-3 text-xl font-black">
+              {player.champion_team ? (
+                <TeamName team={player.champion_team} />
+              ) : (
+                "Şampiyon seçilmedi"
+              )}
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className="rounded-full border border-white/50 bg-white/45 px-3 py-1 text-xs font-black">
+                👑 #{rank} sıra
+              </span>
+
+              <span className="rounded-full border border-white/50 bg-white/45 px-3 py-1 text-xs font-black">
+                🔥 {streak || 0} maç streak
+              </span>
+
+              <span className="rounded-full border border-white/50 bg-white/45 px-3 py-1 text-xs font-black">
+                🏆 {player.champion_team || "Tarafsız"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="rounded-[1.75rem] border border-white/50 bg-white/40 p-5 text-right backdrop-blur">
+          <div className="text-sm font-black uppercase opacity-70">Toplam Puan</div>
+          <div className="text-6xl font-black">{player.total_points || 0}</div>
+          <div className="mt-1 text-xs font-black opacity-70">
+            Başarı %{player.success_rate || 0}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function getMatchStatus(match: Match) {
   const now = Date.now();
   const matchTime = new Date(match.match_time).getTime();
@@ -190,7 +362,7 @@ function getMatchStatus(match: Match) {
       status: "finished" as const,
       label: "Sonuçlandı",
       color: "bg-slate-200 text-slate-600",
-      borderColor: "border-slate-200",
+      borderColor: "border-amber-100",
     };
   }
 
@@ -246,7 +418,6 @@ export default function Home() {
   const [selectedStage, setSelectedStage] = useState("Tümü");
   const [predictionFilter, setPredictionFilter] = useState("Açık");
   const [matchListFilter, setMatchListFilter] = useState("Tümü");
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
 
   const [profilePlayerId, setProfilePlayerId] = useState("");
 
@@ -298,36 +469,6 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const channel = supabase
-      .channel("ors-live-updates")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "matches" },
-        () => loadData(),
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "predictions" },
-        () => loadData(),
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "players" },
-        () => loadData(),
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "bonus_logs" },
-        () => loadData(),
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  useEffect(() => {
     const savedId = localStorage.getItem("ors_current_player_id");
     if (!savedId || players.length === 0) return;
 
@@ -346,7 +487,7 @@ export default function Home() {
 
   const login = () => {
     const player = players.find(
-      (p) => p.name.toLowerCase() === loginName.trim().toLowerCase(),
+      (p) => p.name.toLowerCase() === loginName.trim().toLowerCase()
     );
 
     if (!player) {
@@ -433,7 +574,6 @@ export default function Home() {
       if (filter === "Bugün") return isToday;
       if (filter === "Yarın") return isTomorrow;
       if (filter === "Başlayanlar") return isStarted && !isFinished;
-      if (filter === "Kapalı") return isStarted || isFinished;
       if (filter === "Açık") return !isStarted && !isFinished;
 
       return true;
@@ -452,70 +592,9 @@ export default function Home() {
     return applyTimeFilter(filteredMatches, "Açık").length;
   }, [filteredMatches]);
 
-  const todayMatches = useMemo(() => {
-    return applyTimeFilter(filteredMatches, "Bugün");
-  }, [filteredMatches]);
-
-  const oneHourWarningMatches = useMemo(() => {
-    const now = Date.now();
-
-    return filteredMatches.filter((match) => {
-      const matchTime = new Date(match.match_time).getTime();
-      const diffMinutes = (matchTime - now) / (1000 * 60);
-
-      return diffMinutes > 0 && diffMinutes <= 60 && !match.result;
-    });
-  }, [filteredMatches]);
-
-  const enableNotifications = async () => {
-    if (typeof window === "undefined" || !("Notification" in window)) {
-      alert("Bu tarayıcı bildirimleri desteklemiyor 😅");
-      return;
-    }
-
-    const permission = await Notification.requestPermission();
-
-    if (permission === "granted") {
-      setNotificationsEnabled(true);
-      localStorage.setItem("ors_notifications_enabled", "true");
-      alert("Bildirimler açıldı 🔔");
-    } else {
-      alert("Bildirim izni verilmedi 😄");
-    }
-  };
-
-  useEffect(() => {
-    if (typeof window === "undefined" || !("Notification" in window)) return;
-
-    const saved = localStorage.getItem("ors_notifications_enabled") === "true";
-
-    if (saved && Notification.permission === "granted") {
-      setNotificationsEnabled(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!notificationsEnabled) return;
-    if (typeof window === "undefined" || !("Notification" in window)) return;
-    if (Notification.permission !== "granted") return;
-
-    oneHourWarningMatches.forEach((match) => {
-      const notificationKey = `ors_notified_${match.id}`;
-      const alreadyNotified = localStorage.getItem(notificationKey);
-
-      if (alreadyNotified) return;
-
-      new Notification("ORS Kahvaltı Ligi 🔔", {
-        body: `${match.home_team} - ${match.away_team} maçı 1 saat içinde başlıyor. Tahmini unutma!`,
-      });
-
-      localStorage.setItem(notificationKey, "true");
-    });
-  }, [notificationsEnabled, oneHourWarningMatches]);
-
   const sortedPlayers = useMemo(() => {
     return [...players].sort(
-      (a, b) => Number(b.total_points || 0) - Number(a.total_points || 0),
+      (a, b) => Number(b.total_points || 0) - Number(a.total_points || 0)
     );
   }, [players]);
 
@@ -551,51 +630,11 @@ export default function Home() {
     return streaks;
   }, [players, predictions, matches]);
 
-  const playerBadges = useMemo(() => {
-    const badges: Record<string, string[]> = {};
-
-    const leaderId = sortedPlayers[0]?.id;
-    const maxBlank = Math.max(
-      0,
-      ...players.map((p) => Number(p.intentional_blank || 0)),
-    );
-    const maxWrong = Math.max(
-      0,
-      ...players.map((p) => Number(p.wrong_count || 0)),
-    );
-    const maxBonus = Math.max(
-      0,
-      ...players.map((p) => Number(p.bonus_points || 0)),
-    );
-
-    players.forEach((player) => {
-      const list: string[] = [];
-      const streak = playerStreaks[player.id] || 0;
-      const success = Number(player.success_rate || 0);
-      const correct = Number(player.correct_count || 0);
-      const blank = Number(player.intentional_blank || 0);
-      const wrong = Number(player.wrong_count || 0);
-      const bonus = Number(player.bonus_points || 0);
-
-      if (player.id === leaderId) list.push("👑 GOAT");
-      if (streak >= 5) list.push("🔥 Alev Adam");
-      if (success >= 70 && correct >= 5) list.push("🔮 Oracle");
-      if (blank > 0 && blank === maxBlank) list.push("🥯 Kahvaltı Felaketi");
-      if (wrong > 0 && wrong === maxWrong) list.push("💀 Risk Kurbanı");
-      if (bonus > 0 && bonus === maxBonus) list.push("✨ Bonus Avcısı");
-      if (correct >= 10) list.push("🧠 Tahmin Ustası");
-
-      badges[player.id] = list.length > 0 ? list : ["🌱 Yükselen Yıldız"];
-    });
-
-    return badges;
-  }, [players, sortedPlayers, playerStreaks]);
-
   const getPointsByPlayer = (matchList: Match[], ascending = false) => {
     const data = players.map((player) => {
       const points = matchList.reduce((sum, match) => {
         const pred = predictions.find(
-          (p) => p.player_id === player.id && p.match_id === match.id,
+          (p) => p.player_id === player.id && p.match_id === match.id
         );
 
         const bonus = bonusLogs
@@ -611,7 +650,7 @@ export default function Home() {
     return data.sort((a, b) =>
       ascending
         ? a.period_points - b.period_points
-        : b.period_points - a.period_points,
+        : b.period_points - a.period_points
     );
   };
 
@@ -648,11 +687,13 @@ export default function Home() {
       players.forEach((player) => {
         const points = stageMatches.reduce((sum, match) => {
           const pred = predictions.find(
-            (p) => p.player_id === player.id && p.match_id === match.id,
+            (p) => p.player_id === player.id && p.match_id === match.id
           );
 
           const bonus = bonusLogs
-            .filter((b) => b.player_id === player.id && b.match_id === match.id)
+            .filter(
+              (b) => b.player_id === player.id && b.match_id === match.id
+            )
             .reduce((bonusSum, b) => bonusSum + Number(b.points || 0), 0);
 
           return sum + Number(pred?.points || 0) + bonus;
@@ -698,12 +739,12 @@ export default function Home() {
 
       const points = stageMatches.reduce((sum, match) => {
         const pred = predictions.find(
-          (p) => p.player_id === profilePlayer.id && p.match_id === match.id,
+          (p) => p.player_id === profilePlayer.id && p.match_id === match.id
         );
 
         const bonus = bonusLogs
           .filter(
-            (b) => b.player_id === profilePlayer.id && b.match_id === match.id,
+            (b) => b.player_id === profilePlayer.id && b.match_id === match.id
           )
           .reduce((bonusSum, b) => bonusSum + Number(b.points || 0), 0);
 
@@ -729,8 +770,8 @@ export default function Home() {
         p.prediction === "1"
           ? p.match.home_team
           : p.prediction === "2"
-            ? p.match.away_team
-            : null;
+          ? p.match.away_team
+          : null;
 
       if (!pickedTeam) return;
 
@@ -768,7 +809,7 @@ export default function Home() {
 
   const getConsensus = (matchId: string) => {
     const matchPreds = predictions.filter(
-      (p) => p.match_id === matchId && p.prediction !== "YOK",
+      (p) => p.match_id === matchId && p.prediction !== "YOK"
     );
 
     const total = matchPreds.length;
@@ -808,7 +849,7 @@ export default function Home() {
         prediction,
         points: 0,
       },
-      { onConflict: "player_id,match_id" },
+      { onConflict: "player_id,match_id" }
     );
 
     if (error) {
@@ -857,7 +898,7 @@ export default function Home() {
       const alreadyAwarded = bonusLogs.some(
         (b) =>
           b.player_id === player.id &&
-          b.reason === `Şampiyon tahmini: ${championWinner}`,
+          b.reason === `Şampiyon tahmini: ${championWinner}`
       );
 
       if (alreadyAwarded) continue;
@@ -884,7 +925,7 @@ export default function Home() {
 
   const recalculateAllScores = async (
     overrideMatchId?: string,
-    overrideResult?: string,
+    overrideResult?: string
   ) => {
     const { data: latestPlayers } = await supabase.from("players").select("*");
     const { data: latestPredictions } = await supabase
@@ -900,7 +941,7 @@ export default function Home() {
 
     for (const player of playerList) {
       const playerPredictions = predictionList.filter(
-        (p) => p.player_id === player.id,
+        (p) => p.player_id === player.id
       );
 
       let correct = 0;
@@ -911,9 +952,7 @@ export default function Home() {
       for (const pred of playerPredictions) {
         const predMatch = matches.find((m) => m.id === pred.match_id);
         const finalResult =
-          pred.match_id === overrideMatchId
-            ? overrideResult
-            : predMatch?.result;
+          pred.match_id === overrideMatchId ? overrideResult : predMatch?.result;
 
         if (!finalResult) continue;
 
@@ -932,7 +971,10 @@ export default function Home() {
 
         predictionPoints += points;
 
-        await supabase.from("predictions").update({ points }).eq("id", pred.id);
+        await supabase
+          .from("predictions")
+          .update({ points })
+          .eq("id", pred.id);
       }
 
       const bonusPoints = bonusList
@@ -962,7 +1004,7 @@ export default function Home() {
   const addMissingNoPredictionsForMatch = async (match: Match) => {
     for (const player of players) {
       const exists = predictions.some(
-        (p) => p.player_id === player.id && p.match_id === match.id,
+        (p) => p.player_id === player.id && p.match_id === match.id
       );
 
       if (!exists) {
@@ -980,7 +1022,7 @@ export default function Home() {
     match: Match,
     result: string,
     homeScore?: number,
-    awayScore?: number,
+    awayScore?: number
   ) => {
     if (!currentPlayer?.is_admin || !adminUnlocked) return;
 
@@ -1148,13 +1190,15 @@ export default function Home() {
 
   if (!currentPlayer) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-slate-100 p-4 text-slate-900">
-        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 shadow-lg">
-          <div className="mb-4 text-center text-5xl">🥯⚽</div>
+      <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#FFF7E8] p-4 text-slate-900">
+        <div className="pointer-events-none fixed left-[-8rem] top-[-8rem] h-80 w-80 rounded-full bg-amber-300/40 blur-3xl" />
+        <div className="pointer-events-none fixed right-[-8rem] bottom-[-8rem] h-80 w-80 rounded-full bg-red-300/30 blur-3xl" />
+        <div className="relative w-full max-w-md overflow-hidden rounded-[2rem] border-4 border-red-100 bg-white p-8 shadow-2xl shadow-red-100">
+          <div className="mb-4 flex justify-center"><img src={MASCOT_SRC} alt="ORS maskotu" className="h-44 w-44 rounded-full object-contain drop-shadow-xl" /></div>
 
-          <h1 className="text-center text-xl font-black">ORS Kahvaltı Ligi</h1>
+          <h1 className="text-center text-2xl font-black">ORS Kahvaltı Ligi</h1>
 
-          <p className="mb-6 text-center font-bold text-amber-500">
+          <p className="mb-6 text-center font-bold text-red-500">
             Dünya Kupası Edition
           </p>
 
@@ -1162,7 +1206,7 @@ export default function Home() {
             value={loginName}
             onChange={(e) => setLoginName(e.target.value)}
             placeholder="Kullanıcı adını gir"
-            className="mb-4 w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 outline-none"
+            className="mb-4 w-full rounded-2xl border border-amber-100 bg-amber-50/40 p-4 outline-none"
           />
 
           <button
@@ -1185,15 +1229,25 @@ export default function Home() {
   ].filter(Boolean);
 
   return (
-    <main className="min-h-screen bg-slate-100 text-slate-900">
-      <div className="mx-auto max-w-7xl px-4 py-8">
-        <header className="mb-6 rounded-3xl border border-slate-200 bg-white p-8 shadow-lg">
-          <h1 className="text-4xl font-black leading-none md:text-5xl">
+    <main className="relative min-h-screen overflow-hidden bg-[#FFF7E8] text-slate-900">
+      <div className="pointer-events-none fixed left-[-10rem] top-[-10rem] h-96 w-96 rounded-full bg-amber-300/40 blur-3xl" />
+      <div className="pointer-events-none fixed right-[-12rem] top-32 h-[28rem] w-[28rem] rounded-full bg-red-300/30 blur-3xl" />
+      <div className="pointer-events-none fixed bottom-[-12rem] left-1/3 h-[24rem] w-[24rem] rounded-full bg-orange-200/50 blur-3xl" />
+      <div className="relative z-10 mx-auto max-w-7xl px-4 py-8">
+        <header className="relative mb-6 overflow-hidden rounded-[2rem] border-4 border-red-100 bg-white p-8 shadow-2xl shadow-red-100">
+          <div className="absolute -right-4 -top-4 hidden h-44 w-44 rotate-6 rounded-full bg-amber-100 md:block" />
+          <img src={MASCOT_SRC} alt="ORS maskotu" className="absolute right-6 top-2 hidden h-44 w-44 object-contain drop-shadow-xl md:block" />
+
+          <h1 className="relative text-4xl font-black leading-none md:text-5xl">
             ORS Kahvaltı Ligi
           </h1>
 
-          <p className="mb-6 text-3xl font-black text-amber-500 md:text-4xl">
-            Dünya Kupası Edition 🏆
+          <p className="relative mt-2 text-2xl font-black text-red-500 md:text-4xl">
+            World Cup 2026 Edition 🏆
+          </p>
+
+          <p className="relative mt-4 mb-6 inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-black text-amber-700">
+            Tahmin Et • Kazan • Kahvaltıdan Kaç 🥯
           </p>
 
           <p className="mb-6 font-bold text-slate-600">
@@ -1207,8 +1261,8 @@ export default function Home() {
                 onClick={() => setActiveTab(tab)}
                 className={`rounded-2xl px-5 py-3 font-black transition ${
                   activeTab === tab
-                    ? "bg-amber-400 text-slate-950"
-                    : "bg-slate-100 text-slate-700 hover:bg-amber-50"
+                    ? "bg-red-500 text-white shadow-lg shadow-red-200"
+                    : "bg-amber-50 text-slate-700 hover:bg-amber-100"
                 }`}
               >
                 {tab === "dashboard" && "Dashboard"}
@@ -1227,7 +1281,7 @@ export default function Home() {
             </button>
           </div>
 
-          <div className="mt-5 flex flex-wrap items-center gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-4">
+          <div className="mt-5 flex flex-wrap items-center gap-3 rounded-3xl border border-amber-100 bg-amber-50/40 p-4">
             <div className="mr-2 flex items-center gap-2">
               <span className="text-lg">🏆</span>
               <span className="text-sm font-black uppercase tracking-wide text-slate-500">
@@ -1241,8 +1295,8 @@ export default function Home() {
                 onClick={() => setSelectedStage(stage)}
                 className={`rounded-xl px-4 py-2 font-black transition ${
                   selectedStage === stage
-                    ? "bg-amber-400 text-slate-950"
-                    : "bg-white text-slate-700 hover:bg-amber-50"
+                    ? "bg-red-500 text-white shadow-lg shadow-red-200"
+                    : "bg-white text-slate-700 hover:bg-amber-100"
                 }`}
               >
                 {stage}
@@ -1252,19 +1306,19 @@ export default function Home() {
         </header>
 
         {activeTab === "dashboard" && (
-          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-lg">
+          <section className="rounded-[2rem] border-4 border-red-50 bg-white p-6 shadow-2xl shadow-red-100/70">
             <h2 className="mb-6 text-xl font-black">🏆 Dashboard</h2>
 
             <div className="mb-6 grid gap-4 md:grid-cols-3">
-              <div className="rounded-3xl bg-amber-400 p-5 text-slate-950 transition hover:scale-[1.01]">
-                <div className="text-4xl">👑</div>
+              <div className="rounded-[1.75rem] bg-gradient-to-br from-amber-300 to-orange-300 p-5 text-slate-950 shadow-lg shadow-amber-100 transition hover:scale-[1.01]">
+                <div className="flex items-center justify-between"><div className="text-4xl">👑</div><img src={MASCOT_SRC} alt="maskot" className="h-20 w-20 object-contain" /></div>
                 <div className="text-xl font-black">Genel Lider</div>
                 <div className="animate-pulse text-xl font-black">
                   👑 {sortedPlayers[0]?.name || "-"}
                 </div>
               </div>
 
-              <div className="rounded-3xl bg-red-100 p-5">
+              <div className="rounded-[1.75rem] bg-red-50 p-5 shadow-lg shadow-red-50">
                 <div className="text-4xl">🥯</div>
                 <div className="text-xl font-black">
                   {selectedStage === "Tümü"
@@ -1279,7 +1333,7 @@ export default function Home() {
                 ))}
               </div>
 
-              <div className="rounded-3xl bg-slate-100 p-5">
+              <div className="rounded-[1.75rem] bg-blue-50 p-5 shadow-lg shadow-blue-50">
                 <div className="text-4xl">⚽</div>
                 <div className="text-xl font-black">Açık Maç</div>
                 <div className="text-xl font-black text-blue-600">
@@ -1314,41 +1368,11 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="mb-6 rounded-3xl border border-slate-200 bg-slate-50 p-5">
-              <h3 className="mb-4 text-xl font-black">📈 Turnuva Grafiği</h3>
 
-              {stageChartData.length === 0 ? (
-                <div className="py-8 text-center text-slate-500">
-                  Henüz veri yok 😄
-                </div>
-              ) : (
-                <div className="w-full" style={{ height: 420 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={stageChartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis dataKey="stage" stroke="#64748b" />
-                      <YAxis stroke="#64748b" />
-                      <Tooltip />
-                      <Legend />
-                      {players.map((p, idx) => (
-                        <Line
-                          key={p.id}
-                          type="monotone"
-                          dataKey={p.name}
-                          stroke={PLAYER_COLORS[idx % PLAYER_COLORS.length]}
-                          strokeWidth={p.id === currentPlayer.id ? 4 : 2}
-                        />
-                      ))}
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </div>
 
             <ScoreTable
               sortedPlayers={sortedPlayers}
               playerStreaks={playerStreaks}
-              playerBadges={playerBadges}
               onProfile={(id) => {
                 setProfilePlayerId(id);
                 setActiveTab("profil");
@@ -1358,23 +1382,13 @@ export default function Home() {
         )}
 
         {activeTab === "tahmin" && (
-          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-lg">
+          <section className="rounded-[2rem] border-4 border-red-50 bg-white p-6 shadow-2xl shadow-red-100/70">
             <h2 className="mb-6 text-xl font-black">🎯 Tahmin Yap</h2>
 
-            <FilterButtons
-              value={predictionFilter}
-              onChange={setPredictionFilter}
-            />
-
-            <MatchAlertPanel
-              todayMatches={todayMatches}
-              oneHourWarningMatches={oneHourWarningMatches}
-              notificationsEnabled={notificationsEnabled}
-              onEnableNotifications={enableNotifications}
-            />
+            <FilterButtons value={predictionFilter} onChange={setPredictionFilter} />
 
             {predictionMatches.length === 0 && (
-              <div className="rounded-3xl bg-slate-50 p-6 text-slate-600">
+              <div className="rounded-[1.75rem] bg-amber-50 p-6 text-slate-600">
                 Bu filtrede maç yok 😄
               </div>
             )}
@@ -1383,7 +1397,7 @@ export default function Home() {
               {predictionMatches.map((match) => {
                 const myPrediction = predictions.find(
                   (p) =>
-                    p.match_id === match.id && p.player_id === currentPlayer.id,
+                    p.match_id === match.id && p.player_id === currentPlayer.id
                 );
 
                 const consensus = getConsensus(match.id);
@@ -1394,7 +1408,7 @@ export default function Home() {
                 return (
                   <div
                     key={match.id}
-                    className={`rounded-3xl border bg-slate-50 p-4 transition hover:scale-[1.01] hover:shadow-lg ${status.borderColor}`}
+                    className={`rounded-3xl border bg-amber-50/40 p-4 transition hover:scale-[1.01] hover:shadow-lg ${status.borderColor}`}
                   >
                     <div className="flex flex-wrap justify-between gap-3 text-sm text-slate-500">
                       <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-black text-slate-950">
@@ -1417,7 +1431,7 @@ export default function Home() {
                       <div className="text-xl font-black">
                         <TeamName team={match.home_team} />
                       </div>
-                      <div className="font-black text-amber-500">⚔️</div>
+                      <div className="font-black text-red-500">⚔️</div>
                       <div className="text-xl font-black">
                         <TeamName team={match.away_team} />
                       </div>
@@ -1436,7 +1450,7 @@ export default function Home() {
                             className={`rounded-2xl py-3 font-black ${
                               myPrediction?.prediction === v
                                 ? "bg-amber-400 text-slate-950"
-                                : "border border-slate-200 bg-white hover:bg-amber-50"
+                                : "border border-amber-100 bg-white hover:bg-amber-100"
                             }`}
                           >
                             {v}
@@ -1452,7 +1466,7 @@ export default function Home() {
                     )}
 
                     {myPrediction && (
-                      <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="mt-4 rounded-2xl border border-amber-100 bg-white p-4">
                         <div className="mb-3 flex items-center justify-between">
                           <div className="text-sm font-black text-slate-700">
                             🗣️ Diğerleri ne dedi?
@@ -1494,18 +1508,15 @@ export default function Home() {
         )}
 
         {activeTab === "maclar" && (
-          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-lg">
+          <section className="rounded-[2rem] border-4 border-red-50 bg-white p-6 shadow-2xl shadow-red-100/70">
             <h2 className="mb-6 text-xl font-black">⚽ Maçlar</h2>
 
-            <FilterButtons
-              value={matchListFilter}
-              onChange={setMatchListFilter}
-            />
+            <FilterButtons value={matchListFilter} onChange={setMatchListFilter} />
 
             <div className="space-y-4">
               {matchListMatches.map((match) => {
                 const matchBonuses = bonusLogs.filter(
-                  (b) => b.match_id === match.id,
+                  (b) => b.match_id === match.id
                 );
                 const status = getMatchStatus(match);
                 const isStarted =
@@ -1514,7 +1525,7 @@ export default function Home() {
                 return (
                   <div
                     key={match.id}
-                    className={`rounded-3xl border bg-slate-50 p-4 transition hover:scale-[1.01] hover:shadow-lg ${status.borderColor}`}
+                    className={`rounded-3xl border bg-amber-50/40 p-4 transition hover:scale-[1.01] hover:shadow-lg ${status.borderColor}`}
                   >
                     <div className="flex flex-wrap justify-between gap-3 text-sm text-slate-500">
                       <span className="rounded-full bg-amber-400 px-3 py-1 text-xs font-black text-slate-950">
@@ -1551,7 +1562,7 @@ export default function Home() {
                         const pred = predictions.find(
                           (p) =>
                             p.player_id === player.id &&
-                            p.match_id === match.id,
+                            p.match_id === match.id
                         );
 
                         return (
@@ -1564,8 +1575,8 @@ export default function Home() {
                               {!isStarted && !match.result
                                 ? "Gizli 🔒"
                                 : pred
-                                  ? `${pred.prediction} (${pred.points})`
-                                  : "Yok"}
+                                ? `${pred.prediction} (${pred.points})`
+                                : "Yok"}
                             </span>
                           </div>
                         );
@@ -1580,7 +1591,7 @@ export default function Home() {
 
                         {matchBonuses.map((bonus) => {
                           const player = players.find(
-                            (p) => p.id === bonus.player_id,
+                            (p) => p.id === bonus.player_id
                           );
 
                           return (
@@ -1612,7 +1623,7 @@ export default function Home() {
         )}
 
         {activeTab === "profil" && profilePlayer && (
-          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-lg">
+          <section className="rounded-[2rem] border-4 border-red-50 bg-white p-6 shadow-2xl shadow-red-100/70">
             <h2 className="mb-6 text-xl font-black">👤 Profil</h2>
 
             <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -1620,7 +1631,7 @@ export default function Home() {
               <select
                 value={profilePlayerId}
                 onChange={(e) => setProfilePlayerId(e.target.value)}
-                className="rounded-2xl border border-slate-200 bg-slate-50 p-3 font-black"
+                className="rounded-2xl border border-amber-100 bg-amber-50/40 p-3 font-black"
               >
                 {players.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -1631,66 +1642,24 @@ export default function Home() {
               </select>
             </div>
 
-            <div className="mb-6 rounded-3xl bg-gradient-to-br from-amber-400 to-amber-300 p-6 text-slate-950">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <div>
-                  <div className="text-sm font-bold opacity-70">OYUNCU</div>
-                  <div className="text-xl font-black">{profilePlayer.name}</div>
-                  <div className="mt-2 font-bold">
-                    Şampiyon Tahmini:{" "}
-                    {profilePlayer.champion_team ? (
-                      <TeamName team={profilePlayer.champion_team} />
-                    ) : (
-                      "Seçilmedi"
-                    )}
-                  </div>
-                </div>
-
-                <div className="text-right">
-                  <div className="text-sm font-bold opacity-70">SIRALAMA</div>
-                  <div className="text-5xl font-black">
-                    #
-                    {sortedPlayers.findIndex((p) => p.id === profilePlayer.id) +
-                      1}
-                  </div>
-                </div>
-              </div>
-            </div>
+            <ProfileMascotCard
+              player={profilePlayer}
+              rank={
+                sortedPlayers.findIndex((p) => p.id === profilePlayer.id) + 1
+              }
+              streak={playerStreaks[profilePlayer.id] || 0}
+            />
 
             <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
               <StatBox title="PUAN" value={profilePlayer.total_points || 0} />
               <StatBox title="DOĞRU" value={profilePlayer.correct_count || 0} />
               <StatBox title="YANLIŞ" value={profilePlayer.wrong_count || 0} />
-              <StatBox
-                title="YOK"
-                value={profilePlayer.intentional_blank || 0}
-              />
-              <StatBox
-                title="EK PUAN"
-                value={profilePlayer.bonus_points || 0}
-              />
+              <StatBox title="YOK" value={profilePlayer.intentional_blank || 0} />
+              <StatBox title="EK PUAN" value={profilePlayer.bonus_points || 0} />
               <StatBox
                 title="BAŞARI"
                 value={`%${profilePlayer.success_rate || 0}`}
               />
-            </div>
-
-            <div className="mb-6 rounded-3xl border border-slate-200 bg-slate-50 p-5">
-              <div className="mb-3 text-xs font-black uppercase tracking-wide text-slate-500">
-                Oyuncu Rozetleri
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {(playerBadges[profilePlayer.id] || ["🌱 Yükselen Yıldız"]).map(
-                  (badge) => (
-                    <span
-                      key={badge}
-                      className="rounded-full bg-amber-100 px-3 py-2 text-sm font-black text-amber-800"
-                    >
-                      {badge}
-                    </span>
-                  ),
-                )}
-              </div>
             </div>
 
             <div className="mb-6 grid gap-3 md:grid-cols-4">
@@ -1719,7 +1688,7 @@ export default function Home() {
               />
             </div>
 
-            <div className="mb-6 rounded-3xl border border-slate-200 bg-slate-50 p-5">
+            <div className="mb-6 rounded-[1.75rem] border border-amber-100 bg-amber-50/50 p-5">
               <h3 className="mb-4 text-xl font-black">📊 Aşama Aşama</h3>
 
               <div style={{ height: 260 }}>
@@ -1739,14 +1708,14 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+            <div className="rounded-[1.75rem] border border-amber-100 bg-amber-50/50 p-5">
               <h3 className="mb-4 text-xl font-black">📜 Son 10 Tahmin</h3>
 
               <div className="space-y-2">
                 {profilePredictions.slice(0, 10).map((p) => (
                   <div
                     key={p.id}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3"
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-100 bg-white p-3"
                   >
                     <div>
                       <div className="font-black">
@@ -1783,11 +1752,11 @@ export default function Home() {
         )}
 
         {activeTab === "admin" && currentPlayer.is_admin && (
-          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-lg">
+          <section className="rounded-[2rem] border-4 border-red-50 bg-white p-6 shadow-2xl shadow-red-100/70">
             <h2 className="mb-6 text-xl font-black">👑 Admin Paneli</h2>
 
             {!adminUnlocked ? (
-              <div className="max-w-md rounded-3xl border border-slate-200 bg-slate-50 p-5">
+              <div className="max-w-md rounded-[1.75rem] border border-amber-100 bg-amber-50/50 p-5">
                 <h3 className="mb-3 text-xl font-black">Admin Şifresi</h3>
 
                 <input
@@ -1795,7 +1764,7 @@ export default function Home() {
                   value={adminPassword}
                   onChange={(e) => setAdminPassword(e.target.value)}
                   placeholder="Admin şifresi"
-                  className="mb-3 w-full rounded-2xl border border-slate-200 bg-white p-3"
+                  className="mb-3 w-full rounded-2xl border border-amber-100 bg-white p-3"
                 />
 
                 <button
@@ -1841,16 +1810,14 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="mb-6 rounded-3xl border border-slate-200 bg-slate-50 p-5">
-                  <h3 className="mb-4 text-xl font-black">
-                    📂 Toplu Maç Yükle
-                  </h3>
+                <div className="mb-6 rounded-[1.75rem] border border-amber-100 bg-amber-50/50 p-5">
+                  <h3 className="mb-4 text-xl font-black">📂 Toplu Maç Yükle</h3>
 
                   <input
                     type="file"
                     accept=".csv"
                     onChange={importWeeklyExcel}
-                    className="w-full rounded-2xl border border-slate-200 bg-white p-3"
+                    className="w-full rounded-2xl border border-amber-100 bg-white p-3"
                   />
 
                   <p className="mt-2 text-sm text-slate-500">
@@ -1863,28 +1830,28 @@ export default function Home() {
                     value={homeTeam}
                     onChange={(e) => setHomeTeam(e.target.value)}
                     placeholder="Ev sahibi"
-                    className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
+                    className="rounded-2xl border border-amber-100 bg-amber-50/40 p-3"
                   />
 
                   <input
                     value={awayTeam}
                     onChange={(e) => setAwayTeam(e.target.value)}
                     placeholder="Deplasman"
-                    className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
+                    className="rounded-2xl border border-amber-100 bg-amber-50/40 p-3"
                   />
 
                   <input
                     type="datetime-local"
                     value={matchTime}
                     onChange={(e) => setMatchTime(e.target.value)}
-                    className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
+                    className="rounded-2xl border border-amber-100 bg-amber-50/40 p-3"
                   />
 
                   <input
                     value={league}
                     onChange={(e) => setLeague(e.target.value)}
                     placeholder="Aşama: Grup A / Final"
-                    className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
+                    className="rounded-2xl border border-amber-100 bg-amber-50/40 p-3"
                   />
 
                   <button
@@ -1895,10 +1862,7 @@ export default function Home() {
                   </button>
                 </div>
 
-                <FilterButtons
-                  value={matchListFilter}
-                  onChange={setMatchListFilter}
-                />
+                <FilterButtons value={matchListFilter} onChange={setMatchListFilter} />
 
                 <div className="space-y-3">
                   {matchListMatches.map((match) => {
@@ -1907,7 +1871,7 @@ export default function Home() {
                     return (
                       <div
                         key={match.id}
-                        className={`rounded-2xl border bg-slate-50 p-4 ${status.borderColor}`}
+                        className={`rounded-2xl border bg-amber-50/40 p-4 ${status.borderColor}`}
                       >
                         <div className="mb-1 text-xl font-black">
                           <TeamName team={match.home_team} /> -{" "}
@@ -1939,7 +1903,7 @@ export default function Home() {
                                 },
                               }))
                             }
-                            className="rounded-xl border border-slate-200 bg-white p-3"
+                            className="rounded-xl border border-amber-100 bg-white p-3"
                           />
 
                           <input
@@ -1955,7 +1919,7 @@ export default function Home() {
                                 },
                               }))
                             }
-                            className="rounded-xl border border-slate-200 bg-white p-3"
+                            className="rounded-xl border border-amber-100 bg-white p-3"
                           />
 
                           <button
@@ -1980,10 +1944,8 @@ export default function Home() {
                           </button>
                         </div>
 
-                        <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
-                          <div className="mb-2 font-black">
-                            🏆 Maça Ek Puan Ver
-                          </div>
+                        <div className="mt-4 rounded-2xl border border-amber-100 bg-white p-3">
+                          <div className="mb-2 font-black">🏆 Maça Ek Puan Ver</div>
 
                           <div className="grid gap-2 md:grid-cols-4">
                             <select
@@ -1998,7 +1960,7 @@ export default function Home() {
                                   },
                                 }))
                               }
-                              className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+                              className="rounded-xl border border-amber-100 bg-amber-50/40 p-3"
                             >
                               <option value="">Oyuncu seç</option>
                               {players.map((p) => (
@@ -2022,7 +1984,7 @@ export default function Home() {
                                   },
                                 }))
                               }
-                              className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+                              className="rounded-xl border border-amber-100 bg-amber-50/40 p-3"
                             />
 
                             <input
@@ -2038,7 +2000,7 @@ export default function Home() {
                                   },
                                 }))
                               }
-                              className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+                              className="rounded-xl border border-amber-100 bg-amber-50/40 p-3"
                             />
 
                             <button
@@ -2062,75 +2024,19 @@ export default function Home() {
   );
 }
 
-function MatchAlertPanel({
-  todayMatches,
-  oneHourWarningMatches,
-  notificationsEnabled,
-  onEnableNotifications,
-}: {
-  todayMatches: Match[];
-  oneHourWarningMatches: Match[];
-  notificationsEnabled: boolean;
-  onEnableNotifications: () => void;
-}) {
+
+function MascotEmpty({ text }: { text: string }) {
   return (
-    <div className="mb-6 space-y-3">
-      <div className="rounded-3xl border border-blue-100 bg-blue-50 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="font-black text-blue-900">📅 Günün Maçları</div>
-            <div className="text-sm font-bold text-blue-700">
-              {todayMatches.length > 0
-                ? `${todayMatches.length} maç bugün oynanıyor.`
-                : "Bugün maç yok."}
-            </div>
-          </div>
-
-          {!notificationsEnabled && (
-            <button
-              onClick={onEnableNotifications}
-              className="rounded-2xl bg-blue-600 px-4 py-2 font-black text-white"
-            >
-              Bildirimleri Aç 🔔
-            </button>
-          )}
-        </div>
-
-        {todayMatches.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {todayMatches.slice(0, 6).map((match) => (
-              <span
-                key={match.id}
-                className="rounded-full bg-white px-3 py-1 text-xs font-black text-blue-800"
-              >
-                <TeamName team={match.home_team} /> -{" "}
-                <TeamName team={match.away_team} />
-              </span>
-            ))}
-          </div>
-        )}
+    <div className="flex flex-wrap items-center gap-4 rounded-[1.75rem] border border-amber-100 bg-amber-50 p-5 text-slate-700">
+      <img
+        src={MASCOT_SRC}
+        alt="ORS maskotu"
+        className="h-28 w-28 object-contain drop-shadow-lg"
+      />
+      <div>
+        <div className="text-lg font-black">Maskot diyor ki:</div>
+        <div className="font-bold">{text}</div>
       </div>
-
-      {oneHourWarningMatches.length > 0 && (
-        <div className="rounded-3xl border border-red-200 bg-red-50 p-4">
-          <div className="font-black text-red-700">⏰ Son Çağrı</div>
-          <div className="mt-1 text-sm font-bold text-red-600">
-            1 saat içinde başlayacak maç var. Tahminleri kaçırma!
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            {oneHourWarningMatches.map((match) => (
-              <span
-                key={match.id}
-                className="rounded-full bg-white px-3 py-1 text-xs font-black text-red-700"
-              >
-                <TeamName team={match.home_team} /> -{" "}
-                <TeamName team={match.away_team} />
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -2150,8 +2056,8 @@ function FilterButtons({
           onClick={() => onChange(filter)}
           className={`rounded-2xl px-4 py-2 font-black transition ${
             value === filter
-              ? "bg-amber-400 text-slate-950"
-              : "bg-slate-100 text-slate-700 hover:bg-amber-50"
+              ? "bg-red-500 text-white shadow-lg shadow-red-200"
+              : "bg-amber-50 text-slate-700 hover:bg-amber-100"
           }`}
         >
           {filter}
@@ -2161,9 +2067,15 @@ function FilterButtons({
   );
 }
 
-function StatBox({ title, value }: { title: string; value: string | number }) {
+function StatBox({
+  title,
+  value,
+}: {
+  title: string;
+  value: string | number;
+}) {
   return (
-    <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+    <div className="rounded-2xl border border-slate-100 bg-amber-50/40 p-4">
       <div className="text-xs font-bold text-slate-500">{title}</div>
       <div className="text-xl font-black text-slate-900">{value}</div>
     </div>
@@ -2180,7 +2092,7 @@ function ProfileInsightCard({
   note: string;
 }) {
   return (
-    <div className="rounded-3xl border border-slate-200 bg-slate-50 p-5">
+    <div className="rounded-[1.75rem] border border-amber-100 bg-amber-50/50 p-5">
       <div className="text-xs font-black uppercase tracking-wide text-slate-500">
         {title}
       </div>
@@ -2195,19 +2107,17 @@ function ProfileInsightCard({
 function ScoreTable({
   sortedPlayers,
   playerStreaks,
-  playerBadges,
   onProfile,
 }: {
   sortedPlayers: Player[];
   playerStreaks: Record<string, number>;
-  playerBadges: Record<string, string[]>;
   onProfile: (id: string) => void;
 }) {
   return (
     <div className="overflow-auto">
-      <table className="w-full min-w-[1100px]">
+      <table className="w-full min-w-[950px]">
         <thead>
-          <tr className="border-b border-slate-200 text-left text-slate-500">
+          <tr className="border-b border-amber-100 text-left text-slate-500">
             <th className="pb-3">#</th>
             <th className="pb-3">İsim</th>
             <th className="pb-3">Doğru</th>
@@ -2217,7 +2127,6 @@ function ScoreTable({
             <th className="pb-3">Puan</th>
             <th className="pb-3">Başarı</th>
             <th className="pb-3">Streak</th>
-            <th className="pb-3">Rozetler</th>
             <th className="pb-3">Şampiyon</th>
           </tr>
         </thead>
@@ -2226,17 +2135,17 @@ function ScoreTable({
           {sortedPlayers.map((p, index) => (
             <tr
               key={p.id}
-              className="cursor-pointer border-b border-slate-100 hover:bg-amber-50"
+              className="cursor-pointer border-b border-slate-100 hover:bg-amber-100"
               onClick={() => onProfile(p.id)}
             >
               <td className="py-3 font-black">
                 {index === 0
                   ? "🥇"
                   : index === 1
-                    ? "🥈"
-                    : index === 2
-                      ? "🥉"
-                      : index + 1}
+                  ? "🥈"
+                  : index === 2
+                  ? "🥉"
+                  : index + 1}
               </td>
               <td className="py-3 font-black text-blue-600 underline">
                 {p.name}
@@ -2261,18 +2170,6 @@ function ScoreTable({
                 {(playerStreaks[p.id] || 0) >= 5
                   ? `🔥 ${playerStreaks[p.id]}`
                   : playerStreaks[p.id] || 0}
-              </td>
-              <td className="py-3">
-                <div className="flex max-w-[220px] flex-wrap gap-1">
-                  {(playerBadges[p.id] || []).slice(0, 2).map((badge) => (
-                    <span
-                      key={badge}
-                      className="rounded-full bg-amber-100 px-2 py-1 text-xs font-black text-amber-800"
-                    >
-                      {badge}
-                    </span>
-                  ))}
-                </div>
               </td>
               <td className="py-3 font-black">
                 {p.champion_team ? <TeamName team={p.champion_team} /> : "-"}
