@@ -1233,20 +1233,20 @@ export default function Home() {
       <div className="pointer-events-none fixed left-[-10rem] top-[-10rem] h-96 w-96 rounded-full bg-amber-300/40 blur-3xl" />
       <div className="pointer-events-none fixed right-[-12rem] top-32 h-[28rem] w-[28rem] rounded-full bg-red-300/30 blur-3xl" />
       <div className="pointer-events-none fixed bottom-[-12rem] left-1/3 h-[24rem] w-[24rem] rounded-full bg-orange-200/50 blur-3xl" />
-      <div className="relative z-10 mx-auto max-w-7xl px-4 py-8">
-        <header className="relative mb-6 overflow-hidden rounded-[2rem] border-4 border-red-100 bg-white p-8 shadow-2xl shadow-red-100">
+      <div className="relative z-10 mx-auto max-w-7xl px-4 py-4 pb-28 md:py-8">
+        <header className="relative mb-5 overflow-hidden rounded-[2rem] border-4 border-red-100 bg-white p-5 shadow-2xl shadow-red-100 md:p-8">
           <div className="absolute -right-4 -top-4 hidden h-44 w-44 rotate-6 rounded-full bg-amber-100 md:block" />
           <img src={MASCOT_SRC} alt="ORS maskotu" className="absolute right-6 top-2 hidden h-44 w-44 object-contain drop-shadow-xl md:block" />
 
-          <h1 className="relative text-4xl font-black leading-none md:text-5xl">
+          <h1 className="relative text-3xl font-black leading-none md:text-5xl">
             ORS Kahvaltı Ligi
           </h1>
 
-          <p className="relative mt-2 text-2xl font-black text-red-500 md:text-4xl">
+          <p className="relative mt-2 text-xl font-black text-red-500 md:text-4xl">
             World Cup 2026 Edition 🏆
           </p>
 
-          <p className="relative mt-4 mb-6 inline-flex rounded-full bg-amber-100 px-4 py-2 text-sm font-black text-amber-700">
+          <p className="relative mb-4 mt-3 inline-flex rounded-full bg-amber-100 px-3 py-2 text-xs font-black text-amber-700 md:mb-6 md:px-4 md:text-sm">
             Tahmin Et • Kazan • Kahvaltıdan Kaç 🥯
           </p>
 
@@ -1254,7 +1254,7 @@ export default function Home() {
             Hoş geldin <b>{currentPlayer.name}</b> 😄
           </p>
 
-          <div className="mb-6 flex flex-wrap gap-3">
+          <div className="mb-6 hidden flex-wrap gap-3 md:flex">
             {tabs.map((tab) => (
               <button
                 key={tab}
@@ -1305,6 +1305,8 @@ export default function Home() {
           </div>
         </header>
 
+        <TodayMiniPanel matches={matches} />
+
         {activeTab === "dashboard" && (
           <section className="rounded-[2rem] border-4 border-red-50 bg-white p-6 shadow-2xl shadow-red-100/70">
             <h2 className="mb-6 text-xl font-black">🏆 Dashboard</h2>
@@ -1312,7 +1314,7 @@ export default function Home() {
             <div className="mb-6 grid gap-4 md:grid-cols-3">
               <div className="rounded-[1.75rem] bg-gradient-to-br from-amber-300 to-orange-300 p-5 text-slate-950 shadow-lg shadow-amber-100 transition hover:scale-[1.01]">
                 <div className="flex items-center justify-between"><div className="text-4xl">👑</div><img src={MASCOT_SRC} alt="maskot" className="h-20 w-20 object-contain" /></div>
-                <div className="text-xl font-black">Genel Lider</div>
+                <div className="text-lg font-black md:text-xl">Genel Lider</div>
                 <div className="animate-pulse text-xl font-black">
                   👑 {sortedPlayers[0]?.name || "-"}
                 </div>
@@ -1320,7 +1322,7 @@ export default function Home() {
 
               <div className="rounded-[1.75rem] bg-red-50 p-5 shadow-lg shadow-red-50">
                 <div className="text-4xl">🥯</div>
-                <div className="text-xl font-black">
+                <div className="text-lg font-black md:text-xl">
                   {selectedStage === "Tümü"
                     ? "Turnuva Kahvaltı Hattı"
                     : `${selectedStage} Kahvaltı Hattı`}
@@ -1427,7 +1429,7 @@ export default function Home() {
                       </span>
                     </div>
 
-                    <div className="my-4 grid grid-cols-[1fr_auto_1fr] items-center text-center">
+                    <div className="my-4 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-center">
                       <div className="text-xl font-black">
                         <TeamName team={match.home_team} />
                       </div>
@@ -1447,7 +1449,7 @@ export default function Home() {
                           <button
                             key={v}
                             onClick={() => makePrediction(match, v)}
-                            className={`rounded-2xl py-3 font-black ${
+                            className={`rounded-2xl py-4 text-lg font-black md:py-3 md:text-base ${
                               myPrediction?.prediction === v
                                 ? "bg-amber-400 text-slate-950"
                                 : "border border-amber-100 bg-white hover:bg-amber-100"
@@ -2020,6 +2022,9 @@ export default function Home() {
           </section>
         )}
       </div>
+
+      <FloatingMascot text={`Bugün ${applyTimeFilter(matches, "Bugün").length} maç var. Tahminleri kaçırma 😄`} />
+      <MobileBottomNav activeTab={activeTab} setActiveTab={setActiveTab} isAdmin={!!currentPlayer.is_admin} />
     </main>
   );
 }
@@ -2049,12 +2054,12 @@ function FilterButtons({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="mb-6 flex flex-wrap gap-2">
+    <div className="mb-6 flex gap-2 overflow-x-auto pb-1 md:flex-wrap">
       {MATCH_FILTERS.map((filter) => (
         <button
           key={filter}
           onClick={() => onChange(filter)}
-          className={`rounded-2xl px-4 py-2 font-black transition ${
+          className={`shrink-0 rounded-2xl px-4 py-2 font-black transition ${
             value === filter
               ? "bg-red-500 text-white shadow-lg shadow-red-200"
               : "bg-amber-50 text-slate-700 hover:bg-amber-100"
@@ -2063,6 +2068,100 @@ function FilterButtons({
           {filter}
         </button>
       ))}
+    </div>
+  );
+}
+
+
+function MobileBottomNav({
+  activeTab,
+  setActiveTab,
+  isAdmin,
+}: {
+  activeTab: string;
+  setActiveTab: (tab: string) => void;
+  isAdmin: boolean;
+}) {
+  const items = [
+    { key: "dashboard", label: "Ana", icon: "🏠" },
+    { key: "tahmin", label: "Tahmin", icon: "🎯" },
+    { key: "maclar", label: "Maçlar", icon: "⚽" },
+    { key: "profil", label: "Profil", icon: "👤" },
+    ...(isAdmin ? [{ key: "admin", label: "Admin", icon: "👑" }] : []),
+  ];
+
+  return (
+    <nav className="fixed inset-x-3 bottom-3 z-50 rounded-[1.5rem] border border-red-100 bg-white/95 p-2 shadow-2xl shadow-red-100 backdrop-blur md:hidden">
+      <div className="grid" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
+        {items.map((item) => (
+          <button
+            key={item.key}
+            onClick={() => setActiveTab(item.key)}
+            className={`rounded-2xl px-2 py-2 text-center text-xs font-black transition ${
+              activeTab === item.key
+                ? "bg-red-500 text-white shadow-lg shadow-red-200"
+                : "text-slate-500"
+            }`}
+          >
+            <div className="text-lg leading-none">{item.icon}</div>
+            <div className="mt-1">{item.label}</div>
+          </button>
+        ))}
+      </div>
+    </nav>
+  );
+}
+
+function FloatingMascot({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="fixed bottom-24 right-3 z-40 md:hidden">
+      {open && (
+        <div className="mb-2 max-w-[220px] rounded-2xl border border-amber-100 bg-white p-3 text-sm font-bold text-slate-700 shadow-xl">
+          {text}
+        </div>
+      )}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="rounded-full border-4 border-white bg-amber-100 p-1 shadow-2xl shadow-red-100"
+      >
+        <img src={MASCOT_SRC} alt="ORS maskotu" className="h-16 w-16 object-contain" />
+      </button>
+    </div>
+  );
+}
+
+function TodayMiniPanel({
+  matches,
+}: {
+  matches: Match[];
+}) {
+  const todayMatches = matches.filter((match) => {
+    const now = new Date();
+    const matchDate = new Date(match.match_time);
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+    return matchDate >= today && matchDate < tomorrow;
+  });
+
+  if (todayMatches.length === 0) return null;
+
+  const firstMatch = todayMatches[0];
+
+  return (
+    <div className="mb-5 rounded-[1.5rem] border border-red-100 bg-white p-4 shadow-xl shadow-red-100 md:hidden">
+      <div className="text-xs font-black uppercase tracking-wide text-red-500">
+        Bugünün Maçları
+      </div>
+      <div className="mt-1 text-lg font-black">
+        🔥 {todayMatches.length} maç var
+      </div>
+      <div className="mt-1 text-sm font-bold text-slate-500">
+        İlk maç: {new Date(firstMatch.match_time).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
+      </div>
     </div>
   );
 }
