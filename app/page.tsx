@@ -22,6 +22,7 @@ const supabase = createClient(
 
 const ADMIN_PASSWORD = "ors2026";
 const MASCOT_SRC = "/ors-mascot.png";
+const DASHBOARD_HERO_SRC = "/dashboard-hero.png";
 
 type Player = {
   id: string;
@@ -282,7 +283,7 @@ function ProfileMascotCard({
 
   return (
     <div
-      className={`relative mb-6 overflow-hidden rounded-[2.25rem] bg-gradient-to-br ${theme.card} p-6 text-slate-950 shadow-2xl ${theme.glow}`}
+      className={`relative mb-6 overflow-hidden rounded-[2rem] bg-gradient-to-br ${theme.card} p-4 text-slate-950 shadow-2xl md:p-6 ${theme.glow}`}
     >
       <div className="absolute -right-10 -top-12 h-56 w-56 rounded-full bg-white/25" />
       <div className="absolute -bottom-20 left-8 h-48 w-48 rounded-full bg-white/20" />
@@ -295,7 +296,7 @@ function ProfileMascotCard({
             <img
               src={MASCOT_SRC}
               alt="ORS maskotu"
-              className="relative h-52 w-52 object-contain drop-shadow-2xl md:h-64 md:w-64"
+              className="relative h-40 w-40 object-contain drop-shadow-2xl md:h-64 md:w-64"
             />
           </div>
 
@@ -304,7 +305,7 @@ function ProfileMascotCard({
               Oyuncu Kartı
             </div>
 
-            <div className="text-4xl font-black leading-none">
+            <div className="text-3xl font-black leading-none md:text-4xl">
               {player.name}
             </div>
 
@@ -338,7 +339,7 @@ function ProfileMascotCard({
 
         <div className="rounded-[1.75rem] border border-white/50 bg-white/40 p-5 text-right backdrop-blur">
           <div className="text-sm font-black uppercase opacity-70">Toplam Puan</div>
-          <div className="text-6xl font-black">{player.total_points || 0}</div>
+          <div className="text-5xl font-black md:text-6xl">{player.total_points || 0}</div>
           <div className="mt-1 text-xs font-black opacity-70">
             Başarı %{player.success_rate || 0}
           </div>
@@ -414,6 +415,7 @@ export default function Home() {
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [loginName, setLoginName] = useState("");
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
 
   const [selectedStage, setSelectedStage] = useState("Tümü");
   const [predictionFilter, setPredictionFilter] = useState("Açık");
@@ -485,6 +487,89 @@ export default function Home() {
     if (fresh) setCurrentPlayer(fresh);
   }, [players, currentPlayer]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!("Notification" in window)) return;
+
+    setNotificationsEnabled(Notification.permission === "granted");
+  }, []);
+
+  useEffect(() => {
+    if (!currentPlayer) return;
+    if (typeof window === "undefined") return;
+    if (!("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+
+    const checkUpcomingMatches = () => {
+      const now = Date.now();
+      const notifiedRaw = localStorage.getItem("ors_notified_matches");
+      let notified: string[] = [];
+
+      try {
+        notified = notifiedRaw ? JSON.parse(notifiedRaw) : [];
+      } catch (error) {
+        notified = [];
+        localStorage.removeItem("ors_notified_matches");
+      }
+
+      matches.forEach((match) => {
+        if (match.result) return;
+
+        const matchTime = new Date(match.match_time).getTime();
+        const diffMinutes = (matchTime - now) / (1000 * 60);
+
+        const alreadyPredicted = predictions.some(
+          (p) => p.player_id === currentPlayer.id && p.match_id === match.id
+        );
+
+        const notificationKey = `${currentPlayer.id}-${match.id}`;
+
+        if (
+          diffMinutes > 0 &&
+          diffMinutes <= 60 &&
+          !alreadyPredicted &&
+          !notified.includes(notificationKey)
+        ) {
+          new Notification("⏰ Maça 1 saatten az kaldı!", {
+            body: `${match.home_team} - ${match.away_team} için tahminini yapmayı unutma ⚽`,
+            icon: "/ors-mascot.png",
+          });
+
+          const updated = [...notified, notificationKey];
+          localStorage.setItem("ors_notified_matches", JSON.stringify(updated));
+        }
+      });
+    };
+
+    checkUpcomingMatches();
+    const timer = window.setInterval(checkUpcomingMatches, 60 * 1000);
+
+    return () => window.clearInterval(timer);
+  }, [matches, predictions, currentPlayer]);
+
+  const enableNotifications = async () => {
+    if (typeof window === "undefined") return;
+
+    if (!("Notification" in window)) {
+      alert("Bu tarayıcı bildirim desteklemiyor 😢");
+      return;
+    }
+
+    const permission = await Notification.requestPermission();
+
+    if (permission === "granted") {
+      setNotificationsEnabled(true);
+
+      new Notification("ORS bildirimleri açıldı 🐦", {
+        body: "Maça 1 saat kala seni uyaracağım ⚽",
+        icon: "/ors-mascot.png",
+      });
+    } else {
+      setNotificationsEnabled(false);
+      alert("Bildirim izni verilmedi 😄");
+    }
+  };
+
   const login = () => {
     const player = players.find(
       (p) => p.name.toLowerCase() === loginName.trim().toLowerCase()
@@ -541,13 +626,34 @@ export default function Home() {
   }, [matches]);
 
   const filteredMatches = useMemo(() => {
-    if (selectedStage === "Tümü") return matches;
+    if (selectedStage === "Tümü") {
+      return matches;
+    }
 
     if (selectedStage === "Gruplar") {
       return matches.filter((m) => m.league?.startsWith("Grup"));
     }
 
-    return matches.filter((m) => m.league === selectedStage);
+    if (selectedStage === "Eleme") {
+      return matches.filter((m) =>
+        [
+          "Son 32",
+          "Son 16",
+          "Çeyrek Final",
+          "Yarı Final",
+          "Üçüncülük",
+          "Final",
+        ].includes(m.league || "")
+      );
+    }
+
+    if (selectedStage === "Final Haftası") {
+      return matches.filter((m) =>
+        ["Yarı Final", "Üçüncülük", "Final"].includes(m.league || "")
+      );
+    }
+
+    return matches;
   }, [matches, selectedStage]);
 
   const applyTimeFilter = (matchList: Match[], filter: string) => {
@@ -1234,25 +1340,40 @@ export default function Home() {
       <div className="pointer-events-none fixed right-[-12rem] top-32 h-[28rem] w-[28rem] rounded-full bg-red-300/30 blur-3xl" />
       <div className="pointer-events-none fixed bottom-[-12rem] left-1/3 h-[24rem] w-[24rem] rounded-full bg-orange-200/50 blur-3xl" />
       <div className="relative z-10 mx-auto max-w-7xl px-4 py-4 pb-28 md:py-8">
-        <header className="relative mb-5 overflow-hidden rounded-[2rem] border-4 border-red-100 bg-white p-5 shadow-2xl shadow-red-100 md:p-8">
+        <header className="relative mb-4 overflow-hidden rounded-[1.75rem] border-4 border-red-100 bg-white p-4 shadow-2xl shadow-red-100 md:mb-6 md:rounded-[2rem] md:p-8">
           <div className="absolute -right-4 -top-4 hidden h-44 w-44 rotate-6 rounded-full bg-amber-100 md:block" />
           <img src={MASCOT_SRC} alt="ORS maskotu" className="absolute right-6 top-2 hidden h-44 w-44 object-contain drop-shadow-xl md:block" />
 
-          <h1 className="relative text-3xl font-black leading-none md:text-5xl">
+          <h1 className="relative text-[2.35rem] font-black leading-none md:text-5xl">
             ORS Kahvaltı Ligi
           </h1>
 
-          <p className="relative mt-2 text-xl font-black text-red-500 md:text-4xl">
+          <p className="relative mt-1 text-[1.55rem] font-black leading-tight text-red-500 md:mt-2 md:text-4xl">
             World Cup 2026 Edition 🏆
           </p>
 
-          <p className="relative mb-4 mt-3 inline-flex rounded-full bg-amber-100 px-3 py-2 text-xs font-black text-amber-700 md:mb-6 md:px-4 md:text-sm">
+          <p className="relative mb-3 mt-3 inline-flex rounded-full bg-amber-100 px-3 py-1.5 text-xs font-black text-amber-700 md:mb-6 md:px-4 md:py-2 md:text-sm">
             Tahmin Et • Kazan • Kahvaltıdan Kaç 🥯
           </p>
 
-          <p className="mb-6 font-bold text-slate-600">
+          <p className="mb-4 font-bold text-slate-600">
             Hoş geldin <b>{currentPlayer.name}</b> 😄
           </p>
+
+          <div className="mb-6">
+            <button
+              onClick={enableNotifications}
+              className={`rounded-full px-4 py-2 text-sm font-black transition ${
+                notificationsEnabled
+                  ? "bg-green-100 text-green-700"
+                  : "bg-red-100 text-red-600 hover:bg-red-200"
+              }`}
+            >
+              {notificationsEnabled
+                ? "🔔 Maç bildirimleri açık"
+                : "🔕 Maç bildirimi aç"}
+            </button>
+          </div>
 
           <div className="mb-6 hidden flex-wrap gap-3 md:flex">
             {tabs.map((tab) => (
@@ -1290,40 +1411,39 @@ export default function Home() {
         <TodayMiniPanel matches={matches} />
 
         {activeTab === "dashboard" && (
-          <section className="rounded-[2rem] border-4 border-red-50 bg-white p-6 shadow-2xl shadow-red-100/70">
+          <section className="rounded-[1.75rem] border-4 border-red-50 bg-white p-4 shadow-2xl shadow-red-100/70 md:rounded-[2rem] md:p-6">
             <h2 className="mb-6 text-xl font-black">🏆 Dashboard</h2>
 
-            <div className="mb-6 grid gap-4 md:grid-cols-3">
-              <div className="rounded-[1.75rem] bg-gradient-to-br from-amber-300 to-orange-300 p-5 text-slate-950 shadow-lg shadow-amber-100 transition hover:scale-[1.01]">
-                <div className="flex items-center justify-between"><div className="text-4xl">👑</div><img src={MASCOT_SRC} alt="maskot" className="h-20 w-20 object-contain" /></div>
-                <div className="text-lg font-black md:text-xl">Genel Lider</div>
-                <div className="animate-pulse text-xl font-black">
-                  👑 {sortedPlayers[0]?.name || "-"}
-                </div>
-              </div>
+            <DashboardHero
+              leaderName={sortedPlayers[0]?.name || "-"}
+            />
 
-              <div className="rounded-[1.75rem] bg-red-50 p-5 shadow-lg shadow-red-50">
-                <div className="text-4xl">🥯</div>
-                <div className="text-lg font-black md:text-xl">
-                  {selectedStage === "Tümü"
-                    ? "Turnuva Kahvaltı Hattı"
-                    : `${selectedStage} Kahvaltı Hattı`}
-                </div>
+            <MatchdayBanner matches={matches} />
 
-                {stageScores.slice(0, 2).map((p) => (
-                  <div key={p.id} className="text-xl font-black text-red-600">
-                    {p.name}
-                  </div>
-                ))}
-              </div>
+            <div className="mb-6 grid gap-3 md:grid-cols-3">
+              <MiniDashboardCard
+                icon="👑"
+                title="Genel Lider"
+                value={sortedPlayers[0]?.name || "-"}
+                note={`${sortedPlayers[0]?.total_points || 0} puan`}
+                tone="amber"
+              />
 
-              <div className="rounded-[1.75rem] bg-blue-50 p-5 shadow-lg shadow-blue-50">
-                <div className="text-4xl">⚽</div>
-                <div className="text-xl font-black">Açık Maç</div>
-                <div className="text-xl font-black text-blue-600">
-                  {openMatchesCount}
-                </div>
-              </div>
+              <MiniDashboardCard
+                icon="🥯"
+                title="Kahvaltı Hattı"
+                value={stageScores.slice(0, 2).map((p) => p.name).join(" • ") || "-"}
+                note="Bu aşamada riskli bölge"
+                tone="red"
+              />
+
+              <MiniDashboardCard
+                icon="⚽"
+                title="Açık Maç"
+                value={String(openMatchesCount)}
+                note="Tahmin için hazır"
+                tone="blue"
+              />
             </div>
 
             <ActivityFeed
@@ -1332,32 +1452,6 @@ export default function Home() {
               predictions={predictions}
               bonusLogs={bonusLogs}
             />
-
-            <div className="mb-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
-              <h3 className="mb-3 text-xl font-black">🏆 Şampiyon Tahmini</h3>
-
-              <div className="flex flex-wrap items-center gap-3">
-                <select
-                  value={currentPlayer.champion_team || ""}
-                  disabled={championPickLocked}
-                  onChange={(e) => saveChampionPick(e.target.value)}
-                  className="rounded-2xl border border-amber-200 bg-white p-3 font-black disabled:cursor-not-allowed disabled:bg-slate-100"
-                >
-                  <option value="">Şampiyon ülke seç</option>
-                  {tournamentTeams.map((team) => (
-                    <option key={team} value={team}>
-                      {team}
-                    </option>
-                  ))}
-                </select>
-
-                <span className="font-bold text-slate-600">
-                  {championPickLocked
-                    ? "Şampiyon tahmini kilitlendi 🔒"
-                    : "Doğru çıkarsa +100 puan 😍"}
-                </span>
-              </div>
-            </div>
 
 
 
@@ -1373,8 +1467,20 @@ export default function Home() {
         )}
 
         {activeTab === "tahmin" && (
-          <section className="rounded-[2rem] border-4 border-red-50 bg-white p-6 shadow-2xl shadow-red-100/70">
+          <section className="rounded-[1.75rem] border-4 border-red-50 bg-white p-4 shadow-2xl shadow-red-100/70 md:rounded-[2rem] md:p-6">
             <h2 className="mb-6 text-xl font-black">🎯 Tahmin Yap</h2>
+
+            <NotificationInfoCard
+              notificationsEnabled={notificationsEnabled}
+              enableNotifications={enableNotifications}
+            />
+
+            <ChampionPredictionCard
+              currentPlayer={currentPlayer}
+              tournamentTeams={tournamentTeams}
+              championPickLocked={championPickLocked}
+              saveChampionPick={saveChampionPick}
+            />
 
             <FilterButtons value={predictionFilter} onChange={setPredictionFilter} />
 
@@ -1418,7 +1524,7 @@ export default function Home() {
                       </span>
                     </div>
 
-                    <div className="my-4 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-center">
+                    <div className="my-3 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-center md:my-4">
                       <div className="text-xl font-black">
                         <TeamName team={match.home_team} />
                       </div>
@@ -1438,7 +1544,7 @@ export default function Home() {
                           <button
                             key={v}
                             onClick={() => makePrediction(match, v)}
-                            className={`rounded-2xl py-4 text-lg font-black md:py-3 md:text-base ${
+                            className={`rounded-2xl py-3 text-lg font-black md:py-3 md:text-base ${
                               myPrediction?.prediction === v
                                 ? "bg-amber-400 text-slate-950"
                                 : "border border-amber-100 bg-white hover:bg-amber-100"
@@ -1499,7 +1605,7 @@ export default function Home() {
         )}
 
         {activeTab === "maclar" && (
-          <section className="rounded-[2rem] border-4 border-red-50 bg-white p-6 shadow-2xl shadow-red-100/70">
+          <section className="rounded-[1.75rem] border-4 border-red-50 bg-white p-4 shadow-2xl shadow-red-100/70 md:rounded-[2rem] md:p-6">
             <h2 className="mb-6 text-xl font-black">⚽ Maçlar</h2>
 
             <FilterButtons value={matchListFilter} onChange={setMatchListFilter} />
@@ -1614,7 +1720,7 @@ export default function Home() {
         )}
 
         {activeTab === "profil" && profilePlayer && (
-          <section className="rounded-[2rem] border-4 border-red-50 bg-white p-6 shadow-2xl shadow-red-100/70">
+          <section className="rounded-[1.75rem] border-4 border-red-50 bg-white p-4 shadow-2xl shadow-red-100/70 md:rounded-[2rem] md:p-6">
             <h2 className="mb-6 text-xl font-black">👤 Profil</h2>
 
             <div className="mb-6 flex flex-wrap items-center gap-3">
@@ -1752,7 +1858,7 @@ export default function Home() {
         )}
 
         {activeTab === "admin" && currentPlayer.is_admin && (
-          <section className="rounded-[2rem] border-4 border-red-50 bg-white p-6 shadow-2xl shadow-red-100/70">
+          <section className="rounded-[1.75rem] border-4 border-red-50 bg-white p-4 shadow-2xl shadow-red-100/70 md:rounded-[2rem] md:p-6">
             <h2 className="mb-6 text-xl font-black">👑 Admin Paneli</h2>
 
             {!adminUnlocked ? (
@@ -2023,9 +2129,16 @@ export default function Home() {
 
       <FloatingMascot text={`Bugün ${applyTimeFilter(matches, "Bugün").length} maç var. Tahminleri kaçırma 😄`} />
       <MobileBottomNav activeTab={activeTab} setActiveTab={setActiveTab} isAdmin={!!currentPlayer.is_admin} />
+<div className="mt-4 flex items-center justify-center gap-1 text-m font-black text-slate-800">
+  <span></span>
+  <span>crafted by burcuvic</span>
+  <span>2026</span>
+</div>
+
     </main>
   );
 }
+
 
 
 function MascotEmpty({ text }: { text: string }) {
@@ -2298,6 +2411,255 @@ function ActivityFeed({
   );
 }
 
+
+
+function MatchdayBanner({ matches }: { matches: Match[] }) {
+  const todayMatches = matches
+    .filter((match) => {
+      const now = new Date();
+      const matchDate = new Date(match.match_time);
+      const today = new Date(now);
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(today.getDate() + 1);
+      return matchDate >= today && matchDate < tomorrow;
+    })
+    .sort(
+      (a, b) =>
+        new Date(a.match_time).getTime() - new Date(b.match_time).getTime()
+    );
+
+  if (todayMatches.length === 0) return null;
+
+  const firstMatch = todayMatches[0];
+
+  return (
+    <div className="mb-6 overflow-hidden rounded-[1.75rem] border-2 border-orange-200 bg-gradient-to-r from-orange-400 via-red-400 to-pink-400 p-[2px] shadow-xl shadow-orange-100">
+      <div className="rounded-[1.6rem] bg-white p-4 md:p-5">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-red-100 px-3 py-1 text-xs font-black uppercase tracking-wide text-red-600">
+              🔥 Matchday
+            </div>
+
+            <h3 className="text-2xl font-black text-slate-950">
+              Bugün {todayMatches.length} maç var
+            </h3>
+
+            <p className="mt-1 font-bold text-slate-500">
+              İlk maç:{" "}
+              <span className="text-red-500">
+                {firstMatch.home_team} vs {firstMatch.away_team}
+              </span>
+            </p>
+          </div>
+
+          <div className="hidden text-6xl md:block">⚽🔥</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MiniDashboardCard({
+  icon,
+  title,
+  value,
+  note,
+  tone,
+}: {
+  icon: string;
+  title: string;
+  value: string;
+  note: string;
+  tone: "amber" | "red" | "blue";
+}) {
+  const styles = {
+    amber: "bg-gradient-to-br from-amber-300 to-orange-300 shadow-amber-100",
+    red: "bg-red-50 shadow-red-50",
+    blue: "bg-blue-50 shadow-blue-50",
+  };
+
+  return (
+    <div
+      className={`rounded-[1.5rem] p-4 shadow-lg ${styles[tone]}`}
+    >
+      <div className="text-3xl">{icon}</div>
+      <div className="mt-3 text-sm font-black uppercase tracking-wide text-slate-500">
+        {title}
+      </div>
+      <div className="mt-1 truncate text-xl font-black text-slate-950">
+        {value}
+      </div>
+      <div className="mt-1 text-xs font-bold text-slate-500">{note}</div>
+    </div>
+  );
+}
+
+
+
+function NotificationInfoCard({
+  notificationsEnabled,
+  enableNotifications,
+}: {
+  notificationsEnabled: boolean;
+  enableNotifications: () => void;
+}) {
+  return (
+    <div className="mb-6 rounded-[1.75rem] border border-red-100 bg-white p-4 shadow-xl shadow-red-100/50">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <div className="text-sm font-black uppercase tracking-wide text-red-500">
+            Maç Hatırlatıcısı
+          </div>
+          <div className="mt-1 text-xl font-black text-slate-950">
+            Maça 1 saat kala uyarayım mı?
+          </div>
+          <div className="mt-1 text-sm font-bold text-slate-500">
+            Site açıkken tahmin yapmadığın maçlar için bildirim gönderirim ⚽
+          </div>
+        </div>
+
+        <button
+          onClick={enableNotifications}
+          className={`rounded-2xl px-4 py-3 font-black transition ${
+            notificationsEnabled
+              ? "bg-green-100 text-green-700"
+              : "bg-red-500 text-white shadow-lg shadow-red-200"
+          }`}
+        >
+          {notificationsEnabled ? "🔔 Açık" : "🔔 Bildirim Aç"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ChampionPredictionCard({
+  currentPlayer,
+  tournamentTeams,
+  championPickLocked,
+  saveChampionPick,
+}: {
+  currentPlayer: Player;
+  tournamentTeams: string[];
+  championPickLocked: boolean;
+  saveChampionPick: (team: string) => void;
+}) {
+  const selectedTeam = currentPlayer.champion_team || "";
+  const selectedTheme = getCountryTheme(selectedTeam);
+
+  return (
+    <div
+      className={`mb-6 overflow-hidden rounded-[2rem] border-4 border-red-50 bg-gradient-to-br ${selectedTheme.card} p-[2px] shadow-2xl ${selectedTheme.glow}`}
+    >
+      <div className="relative overflow-hidden rounded-[1.85rem] bg-white/85 p-5 backdrop-blur md:p-6">
+        <div className="absolute -right-8 -top-8 h-32 w-32 rounded-full bg-amber-200/40" />
+        <div className="absolute right-5 top-5 hidden text-7xl opacity-20 md:block">🏆</div>
+
+        <div className="relative grid gap-5 md:grid-cols-[1.1fr_0.9fr] md:items-center">
+          <div>
+            <div className="mb-2 inline-flex rounded-full bg-red-100 px-3 py-1 text-xs font-black uppercase tracking-wide text-red-600">
+              Turnuva Tahmini
+            </div>
+
+            <h3 className="text-2xl font-black text-slate-950 md:text-3xl">
+              Şampiyonunu seç, +100 puanı kovala
+            </h3>
+
+            <p className="mt-2 font-bold text-slate-500">
+              Bu tahmin turnuva başlamadan kilitlenir. Doğru ülkeyi seçersen
+              finalde büyük kahvaltı bonusu gelir 😍
+            </p>
+
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <select
+                value={selectedTeam}
+                disabled={championPickLocked}
+                onChange={(e) => saveChampionPick(e.target.value)}
+                className="min-w-[220px] rounded-2xl border border-amber-200 bg-white p-3 font-black text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-100"
+              >
+                <option value="">Şampiyon ülke seç</option>
+                {tournamentTeams.map((team) => (
+                  <option key={team} value={team}>
+                    {team}
+                  </option>
+                ))}
+              </select>
+
+              <span className="rounded-full bg-amber-100 px-3 py-2 text-sm font-black text-amber-700">
+                {championPickLocked
+                  ? "🔒 Şampiyon tahminleri kilitlendi"
+                  : "⏳ Kilitlenme: 11 Haziran 19:00"}
+              </span>
+            </div>
+          </div>
+
+          <div className="rounded-[1.75rem] border border-white/70 bg-white/60 p-4 shadow-xl">
+            <div className="text-xs font-black uppercase tracking-wide text-slate-500">
+              Seçili Şampiyon
+            </div>
+
+            <div className="mt-3 flex items-center gap-3">
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-100 text-3xl">
+                🏆
+              </div>
+
+              <div>
+                <div className="text-2xl font-black text-slate-950">
+                  {selectedTeam ? <TeamName team={selectedTeam} /> : "Henüz yok"}
+                </div>
+                <div className="mt-1 text-sm font-bold text-slate-500">
+                  {selectedTeam ? `${selectedTheme.name} modu` : "Bir ülke seç"}
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-black text-red-600">
+              Doğru çıkarsa +100 puan 😎
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DashboardHero({
+  leaderName,
+}: {
+  leaderName: string;
+}) {
+  return (
+    <div className="mb-6 overflow-hidden rounded-[1.75rem] border-4 border-red-50 bg-white shadow-xl shadow-red-100/60">
+      <div className="grid items-center md:grid-cols-[1.25fr_0.75fr]">
+        <div className="p-4 md:p-6">
+          <div className="inline-flex rounded-full bg-red-100 px-3 py-1 text-xs font-black uppercase tracking-wide text-red-600">
+            Ana Sayfa
+          </div>
+
+          <h3 className="mt-4 text-3xl font-black leading-tight text-slate-950 md:text-4xl">
+            ORS World Cup Arenasına Hoş Geldin
+          </h3>
+
+          <p className="mt-3 max-w-xl font-bold text-slate-500">
+            Tahminlerini yap, puanları topla ve arkadaşlarını geç.
+            Dünya Kupası heyecanı ORS Kahvaltı Ligi’nde başladı ⚽🔥
+          </p>
+        </div>
+
+        <div className="relative flex min-h-[180px] items-center justify-center overflow-hidden md:min-h-[240px]">
+          <img
+            src={DASHBOARD_HERO_SRC}
+            alt="ORS lider maskotu"
+            className="mx-auto h-[72%] w-[72%] object-contain object-center drop-shadow-2xl"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StageFilter({
   selectedStage,
   setSelectedStage,
@@ -2305,50 +2667,62 @@ function StageFilter({
   selectedStage: string;
   setSelectedStage: (stage: string) => void;
 }) {
-  const groups = [
-    { title: "Genel", items: ["Tümü"] },
-    { title: "Grup", items: ["Gruplar"] },
-    { title: "Eleme", items: ["Son 32", "Son 16", "Çeyrek Final", "Yarı Final", "Üçüncülük", "Final"] },
+  const filters = [
+    {
+      label: "Tüm Maçlar",
+      value: "Tümü",
+      icon: "🌍",
+    },
+    {
+      label: "Grup Maçları",
+      value: "Gruplar",
+      icon: "🏟️",
+    },
+    {
+      label: "Eleme Maçları",
+      value: "Eleme",
+      icon: "⚔️",
+    },
+    {
+      label: "Final Haftası",
+      value: "Final Haftası",
+      icon: "🏆",
+    },
   ];
 
   return (
-    <div className="mt-4 rounded-[1.75rem] border border-amber-100 bg-gradient-to-r from-amber-50 to-red-50 p-3 md:mt-5 md:p-4">
+    <div className="mt-3 rounded-[1.5rem] border border-amber-100 bg-gradient-to-r from-amber-50 to-red-50 p-3 md:mt-5 md:rounded-[1.75rem] md:p-4">
       <div className="mb-3 flex items-center gap-2">
-        <span className="text-xl">🏆</span>
+        <span className="text-xl">🔎</span>
+
         <span className="text-sm font-black uppercase tracking-wide text-slate-500">
-          Turnuva Aşaması
+          Maç Filtresi
         </span>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-[0.7fr_0.7fr_3fr]">
-        {groups.map((group) => (
-          <div key={group.title} className="rounded-[1.25rem] bg-white/70 p-2">
-            <div className="mb-2 px-2 text-[10px] font-black uppercase tracking-wide text-slate-400">
-              {group.title}
-            </div>
+      <div className="grid grid-cols-2 gap-2 md:flex md:flex-wrap">
+        {filters.map((filter) => {
+          const active = selectedStage === filter.value;
 
-            <div className="flex gap-2 overflow-x-auto md:flex-wrap">
-              {group.items.map((stage) => (
-                <button
-                  key={stage}
-                  onClick={() => setSelectedStage(stage)}
-                  className={`shrink-0 rounded-2xl px-4 py-2 text-sm font-black transition ${
-                    selectedStage === stage
-                      ? "bg-red-500 text-white shadow-lg shadow-red-200"
-                      : "bg-white text-slate-700 hover:bg-amber-100"
-                  }`}
-                >
-                  {stage}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
+          return (
+            <button
+              key={filter.value}
+              onClick={() => setSelectedStage(filter.value)}
+              className={`rounded-2xl px-3 py-2 text-sm font-black transition-all md:px-4 ${
+                active
+                  ? "scale-[1.03] bg-red-500 text-white shadow-lg shadow-red-200"
+                  : "bg-white text-slate-700 hover:bg-amber-100"
+              }`}
+            >
+              <span className="mr-1">{filter.icon}</span>
+              {filter.label}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
 }
-
 
 function MobileBottomNav({
   activeTab,
@@ -2368,13 +2742,13 @@ function MobileBottomNav({
   ];
 
   return (
-    <nav className="fixed inset-x-3 bottom-3 z-50 rounded-[1.5rem] border border-red-100 bg-white/95 p-2 shadow-2xl shadow-red-100 backdrop-blur md:hidden">
+    <nav className="fixed inset-x-3 bottom-3 z-50 rounded-[1.5rem] border border-red-100 bg-white/95 p-1.5 shadow-2xl shadow-red-100 backdrop-blur md:hidden">
       <div className="grid" style={{ gridTemplateColumns: `repeat(${items.length}, minmax(0, 1fr))` }}>
         {items.map((item) => (
           <button
             key={item.key}
             onClick={() => setActiveTab(item.key)}
-            className={`rounded-2xl px-2 py-2 text-center text-xs font-black transition ${
+            className={`rounded-2xl px-2 py-1.5 text-center text-xs font-black transition ${
               activeTab === item.key
                 ? "bg-red-500 text-white shadow-lg shadow-red-200"
                 : "text-slate-500"
@@ -2393,7 +2767,7 @@ function FloatingMascot({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="fixed bottom-24 right-3 z-40 md:hidden">
+    <div className="fixed bottom-28 right-3 z-40 md:hidden">
       {open && (
         <div className="mb-2 max-w-[220px] rounded-2xl border border-amber-100 bg-white p-3 text-sm font-bold text-slate-700 shadow-xl">
           {text}
@@ -2403,7 +2777,7 @@ function FloatingMascot({ text }: { text: string }) {
         onClick={() => setOpen((v) => !v)}
         className="rounded-full border-4 border-white bg-amber-100 p-1 shadow-2xl shadow-red-100"
       >
-        <img src={MASCOT_SRC} alt="ORS maskotu" className="h-16 w-16 object-contain" />
+        <img src={MASCOT_SRC} alt="ORS maskotu" className="h-12 w-12 object-contain" />
       </button>
     </div>
   );
@@ -2429,7 +2803,7 @@ function TodayMiniPanel({
   const firstMatch = todayMatches[0];
 
   return (
-    <div className="mb-5 rounded-[1.5rem] border border-red-100 bg-white p-4 shadow-xl shadow-red-100 md:hidden">
+    <div className="mb-4 rounded-[1.5rem] border border-red-100 bg-white p-3 shadow-xl shadow-red-100 md:hidden">
       <div className="text-xs font-black uppercase tracking-wide text-red-500">
         Bugünün Maçları
       </div>
