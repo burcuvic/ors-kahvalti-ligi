@@ -1871,6 +1871,21 @@ export default function Home() {
               />
             </div>
 
+<BadgeShowcase
+  player={profilePlayer}
+  rank={
+    sortedPlayers.findIndex((p) => p.id === profilePlayer.id) + 1
+  }
+  streak={playerStreaks[profilePlayer.id] || 0}
+  players={players}
+/>
+
+<HeadToHeadCard
+  profilePlayer={profilePlayer}
+  players={players}
+  matches={matches}
+  predictions={predictions}
+/>
             <BadgeShowcase
               player={profilePlayer}
               rank={
@@ -3084,5 +3099,267 @@ function LoadingScreen() {
         </div>
       </div>
     </main>
+  );
+}
+function StageRaceChart({
+  stageChartData,
+  players,
+}: {
+  stageChartData: Record<string, string | number>[];
+  players: Player[];
+}) {
+  if (stageChartData.length === 0 || players.length === 0) return null;
+
+  return (
+    <div className="mb-6 rounded-[2rem] border border-amber-100 bg-white p-5 shadow-xl shadow-red-100/50">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-xl font-black">📈 Aşama Aşama Yarış</h3>
+        <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-700">
+          Kümülatif puan
+        </span>
+      </div>
+
+      <div style={{ height: 320 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={stageChartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+            <XAxis
+              dataKey="stage"
+              stroke="#64748b"
+              tick={{ fontSize: 12, fontWeight: 700 }}
+            />
+            <YAxis stroke="#64748b" tick={{ fontSize: 12 }} />
+            <Tooltip
+              contentStyle={{
+                background: "white",
+                border: "1px solid #fde68a",
+                borderRadius: "12px",
+                fontWeight: 700,
+              }}
+            />
+            <Legend wrapperStyle={{ fontWeight: 700, fontSize: 12 }} />
+            {players.map((player, index) => (
+              <Line
+                key={player.id}
+                type="monotone"
+                dataKey={player.name}
+                stroke={PLAYER_COLORS[index % PLAYER_COLORS.length]}
+                strokeWidth={3}
+                dot={{ r: 4 }}
+                activeDot={{ r: 6 }}
+              />
+            ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      <p className="mt-3 text-xs font-bold text-slate-500">
+        💡 Her aşama sonunda kim ne kadar puanda? Çizgilerin kesişimi heyecanın
+        en yoğun yerleri.
+      </p>
+    </div>
+  );
+}
+function HeadToHeadCard({
+  profilePlayer,
+  players,
+  matches,
+  predictions,
+}: {
+  profilePlayer: Player;
+  players: Player[];
+  matches: Match[];
+  predictions: Prediction[];
+}) {
+  const [rivalId, setRivalId] = useState("");
+
+  const otherPlayers = players.filter((p) => p.id !== profilePlayer.id);
+
+  const stats = useMemo(() => {
+    if (!rivalId) return null;
+
+    const rival = players.find((p) => p.id === rivalId);
+    if (!rival) return null;
+
+    const finishedMatches = matches.filter((m) => m.result);
+
+    let meCorrect = 0;
+    let rivalCorrect = 0;
+    let bothCorrect = 0;
+    let bothWrong = 0;
+    let meOnlyCorrect = 0;
+    let rivalOnlyCorrect = 0;
+    let common = 0;
+
+    finishedMatches.forEach((match) => {
+      const myPred = predictions.find(
+        (p) => p.player_id === profilePlayer.id && p.match_id === match.id
+      );
+      const rivalPred = predictions.find(
+        (p) => p.player_id === rival.id && p.match_id === match.id
+      );
+
+      if (!myPred || !rivalPred) return;
+      common++;
+
+      const meRight =
+        myPred.prediction !== "YOK" && myPred.prediction === match.result;
+      const rivalRight =
+        rivalPred.prediction !== "YOK" && rivalPred.prediction === match.result;
+
+      if (meRight) meCorrect++;
+      if (rivalRight) rivalCorrect++;
+      if (meRight && rivalRight) bothCorrect++;
+      if (!meRight && !rivalRight) bothWrong++;
+      if (meRight && !rivalRight) meOnlyCorrect++;
+      if (!meRight && rivalRight) rivalOnlyCorrect++;
+    });
+
+    return {
+      rival,
+      common,
+      meCorrect,
+      rivalCorrect,
+      bothCorrect,
+      bothWrong,
+      meOnlyCorrect,
+      rivalOnlyCorrect,
+      winner:
+        meCorrect > rivalCorrect
+          ? "me"
+          : rivalCorrect > meCorrect
+          ? "rival"
+          : "tie",
+    };
+  }, [rivalId, profilePlayer, players, matches, predictions]);
+
+  return (
+    <div className="mb-6 rounded-[2rem] border border-amber-100 bg-white p-5 shadow-xl shadow-red-100/50">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-xl font-black">⚔️ Head-to-Head</h3>
+        <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-black text-red-600">
+          Düello modu
+        </span>
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <span className="font-bold text-slate-500">Rakip seç:</span>
+        <select
+          value={rivalId}
+          onChange={(e) => setRivalId(e.target.value)}
+          className="rounded-2xl border border-amber-100 bg-amber-50/40 p-3 font-black"
+        >
+          <option value="">Bir rakip seç</option>
+          {otherPlayers.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {!stats && (
+        <p className="rounded-2xl bg-amber-50 p-4 font-bold text-slate-500">
+          Bir rakip seç, kim daha iyi tahminci görelim 😎
+        </p>
+      )}
+
+      {stats && (
+        <>
+          <div className="mb-4 grid grid-cols-3 items-center gap-3">
+            <div
+              className={`rounded-2xl p-4 text-center ${
+                stats.winner === "me"
+                  ? "bg-gradient-to-br from-green-400 to-emerald-500 text-white shadow-lg shadow-green-200"
+                  : "bg-amber-50 text-slate-700"
+              }`}
+            >
+              <div className="text-xs font-black uppercase opacity-80">
+                {profilePlayer.name}
+              </div>
+              <div className="mt-1 text-4xl font-black">
+                {stats.meCorrect}
+              </div>
+              <div className="mt-1 text-xs font-bold opacity-80">doğru</div>
+            </div>
+
+            <div className="text-center">
+              <div className="text-3xl">
+                {stats.winner === "tie" ? "🤝" : "⚔️"}
+              </div>
+              <div className="mt-1 text-xs font-black text-slate-500">
+                {stats.common} ortak maç
+              </div>
+            </div>
+
+            <div
+              className={`rounded-2xl p-4 text-center ${
+                stats.winner === "rival"
+                  ? "bg-gradient-to-br from-green-400 to-emerald-500 text-white shadow-lg shadow-green-200"
+                  : "bg-amber-50 text-slate-700"
+              }`}
+            >
+              <div className="text-xs font-black uppercase opacity-80">
+                {stats.rival.name}
+              </div>
+              <div className="mt-1 text-4xl font-black">
+                {stats.rivalCorrect}
+              </div>
+              <div className="mt-1 text-xs font-bold opacity-80">doğru</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <div className="rounded-2xl border border-green-200 bg-green-50 p-3 text-center">
+              <div className="text-2xl">✅</div>
+              <div className="text-xs font-black uppercase text-green-700">
+                İkisi de doğru
+              </div>
+              <div className="text-xl font-black text-green-700">
+                {stats.bothCorrect}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-red-200 bg-red-50 p-3 text-center">
+              <div className="text-2xl">❌</div>
+              <div className="text-xs font-black uppercase text-red-700">
+                İkisi de yanlış
+              </div>
+              <div className="text-xl font-black text-red-700">
+                {stats.bothWrong}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-center">
+              <div className="text-2xl">😎</div>
+              <div className="text-xs font-black uppercase text-amber-700">
+                Sadece sen
+              </div>
+              <div className="text-xl font-black text-amber-700">
+                {stats.meOnlyCorrect}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-orange-200 bg-orange-50 p-3 text-center">
+              <div className="text-2xl">😬</div>
+              <div className="text-xs font-black uppercase text-orange-700">
+                Sadece rakip
+              </div>
+              <div className="text-xl font-black text-orange-700">
+                {stats.rivalOnlyCorrect}
+              </div>
+            </div>
+          </div>
+
+          {stats.winner !== "tie" && (
+            <div className="mt-4 rounded-2xl bg-amber-50 p-3 text-center text-sm font-black text-amber-700">
+              {stats.winner === "me"
+                ? `🏆 ${profilePlayer.name} ${stats.meCorrect - stats.rivalCorrect} doğru önde!`
+                : `🥯 ${stats.rival.name} ${stats.rivalCorrect - stats.meCorrect} doğru önde, kahvaltı senden!`}
+            </div>
+          )}
+        </>
+      )}
+    </div>
   );
 }
