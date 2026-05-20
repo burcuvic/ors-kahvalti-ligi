@@ -1886,15 +1886,6 @@ export default function Home() {
   matches={matches}
   predictions={predictions}
 />
-            <BadgeShowcase
-              player={profilePlayer}
-              rank={
-                sortedPlayers.findIndex((p) => p.id === profilePlayer.id) + 1
-              }
-              streak={playerStreaks[profilePlayer.id] || 0}
-              players={players}
-            />
-
             <div className="mb-6 grid gap-3 md:grid-cols-4">
               <ProfileInsightCard
                 title="En Çok Doğru Bildiği Ülke"
