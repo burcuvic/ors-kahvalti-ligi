@@ -1509,7 +1509,17 @@ export default function Home() {
             <DashboardHero leaderName={sortedPlayers[0]?.name || "-"} />
 
             <MatchdayBanner matches={matches} />
+<MatchdayBanner matches={matches} />
 
+<TodayLeaderCard
+  players={players}
+  matches={matches}
+  predictions={predictions}
+  bonusLogs={bonusLogs}
+/>
+
+<div className="mb-6 grid gap-3 md:grid-cols-3">
+  ...
             <div className="mb-6 grid gap-3 md:grid-cols-3">
               <MiniDashboardCard
                 icon="👑"
@@ -2349,14 +2359,15 @@ function getPlayerBadges({
     });
   }
 
-  if (streak >= 5) {
-    badges.push({
-      icon: "🔥",
-      title: "Alev Adam",
-      note: `${streak} maçlık seri`,
-      color: "bg-red-100 text-red-700 border-red-200",
-    });
-  } else if (streak >= 3) {
+ if (streak >= 5) {
+  badges.push({
+    icon: "🔥",
+    title: "Alev Adam",
+    note: `${streak} maçlık seri`,
+    color:
+      "bg-gradient-to-br from-orange-400 via-red-500 to-red-600 text-white border-red-300 shadow-lg shadow-red-200 animate-pulse",
+  });
+} else if (streak >= 3) {
     badges.push({
       icon: "⚡",
       title: "Formda",
@@ -3351,6 +3362,189 @@ function HeadToHeadCard({
           )}
         </>
       )}
+    </div>
+  );
+}
+function TodayLeaderCard({
+  players,
+  matches,
+  predictions,
+  bonusLogs,
+}: {
+  players: Player[];
+  matches: Match[];
+  predictions: Prediction[];
+  bonusLogs: BonusLog[];
+}) {
+  const todayLeader = useMemo(() => {
+    const now = Date.now();
+    const dayAgo = now - 24 * 60 * 60 * 1000;
+
+    const recentMatches = matches.filter((m) => {
+      const t = new Date(m.match_time).getTime();
+      return t >= dayAgo && t <= now && m.result;
+    });
+
+    if (recentMatches.length === 0) return null;
+
+    const scores = players.map((player) => {
+      const points = recentMatches.reduce((sum, match) => {
+        const pred = predictions.find(
+          (p) => p.player_id === player.id && p.match_id === match.id
+        );
+
+        const bonus = bonusLogs
+          .filter((b) => b.player_id === player.id && b.match_id === match.id)
+          .reduce((bSum, b) => bSum + Number(b.points || 0), 0);
+
+        return sum + Number(pred?.points || 0) + bonus;
+      }, 0);
+
+      return { ...player, dayPoints: points };
+    });
+
+    const sorted = scores.sort((a, b) => b.dayPoints - a.dayPoints);
+    const top = sorted[0];
+
+    if (!top || top.dayPoints === 0) return null;
+
+    return { ...top, matchCount: recentMatches.length };
+  }, [players, matches, predictions, bonusLogs]);
+
+  if (!todayLeader) return null;
+
+  return (
+    <div className="mb-6 overflow-hidden rounded-[1.75rem] border-2 border-emerald-200 bg-gradient-to-br from-emerald-400 via-green-400 to-teal-400 p-[2px] shadow-xl shadow-emerald-100">
+      <div className="rounded-[1.6rem] bg-white p-4 md:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 text-3xl shadow-lg shadow-emerald-200">
+              🚀
+            </div>
+            <div>
+              <div className="text-xs font-black uppercase tracking-wide text-emerald-600">
+                Son 24 Saatin Yıldızı
+              </div>
+              <div className="text-2xl font-black text-slate-950">
+                {todayLeader.name}
+              </div>
+              <div className="text-sm font-bold text-slate-500">
+                {todayLeader.matchCount} maç oynandı
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-right">
+            <div className="text-xs font-black uppercase text-emerald-700">
+              Kazandığı puan
+            </div>
+            <div className="text-3xl font-black text-emerald-700">
+              +{todayLeader.dayPoints}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+function BraveCallCard({
+  players,
+  matches,
+  predictions,
+}: {
+  players: Player[];
+  matches: Match[];
+  predictions: Prediction[];
+}) {
+  const braveCall = useMemo(() => {
+    const finishedMatches = matches.filter((m) => m.result);
+
+    let best: {
+      player: Player;
+      match: Match;
+      prediction: string;
+      consensus: number;
+    } | null = null;
+
+    finishedMatches.forEach((match) => {
+      const matchPreds = predictions.filter(
+        (p) => p.match_id === match.id && p.prediction !== "YOK"
+      );
+      const total = matchPreds.length;
+      if (total < 3) return;
+
+      const counts = { "1": 0, X: 0, "2": 0 };
+      matchPreds.forEach((p) => {
+        if (p.prediction in counts)
+          counts[p.prediction as "1" | "X" | "2"]++;
+      });
+
+      const correctPred = match.result as "1" | "X" | "2";
+      const correctCount = counts[correctPred] || 0;
+      const consensus = (correctCount / total) * 100;
+
+      // Az kişi doğru bildiyse (azınlık), cesur sayılır
+      if (consensus > 35) return;
+
+      matchPreds.forEach((p) => {
+        if (p.prediction === match.result) {
+          const player = players.find((pl) => pl.id === p.player_id);
+          if (!player) return;
+
+          if (!best || consensus < best.consensus) {
+            best = {
+              player,
+              match,
+              prediction: p.prediction,
+              consensus,
+            };
+          }
+        }
+      });
+    });
+
+    return best;
+  }, [players, matches, predictions]);
+
+  if (!braveCall) return null;
+
+  return (
+    <div className="mb-6 overflow-hidden rounded-[1.75rem] border-2 border-purple-200 bg-gradient-to-br from-purple-500 via-fuchsia-500 to-pink-500 p-[2px] shadow-xl shadow-purple-100">
+      <div className="rounded-[1.6rem] bg-white p-4 md:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 text-3xl shadow-lg shadow-purple-200">
+              🦅
+            </div>
+            <div>
+              <div className="text-xs font-black uppercase tracking-wide text-purple-600">
+                Cesur Tahminci
+              </div>
+              <div className="text-2xl font-black text-slate-950">
+                {braveCall.player.name}
+              </div>
+              <div className="text-sm font-bold text-slate-500">
+                <TeamName team={braveCall.match.home_team} /> -{" "}
+                <TeamName team={braveCall.match.away_team} />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-purple-50 px-4 py-3 text-right">
+            <div className="text-xs font-black uppercase text-purple-700">
+              Sadece
+            </div>
+            <div className="text-3xl font-black text-purple-700">
+              %{Math.round(braveCall.consensus)}
+            </div>
+            <div className="text-xs font-bold text-purple-600">bildi</div>
+          </div>
+        </div>
+
+        <div className="mt-3 rounded-2xl bg-purple-50 p-3 text-sm font-black text-purple-700">
+          🎯 Çoğunluğa rağmen "{braveCall.prediction}" dedi ve haklı çıktı 💪
+        </div>
+      </div>
     </div>
   );
 }
