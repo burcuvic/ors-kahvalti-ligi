@@ -405,8 +405,69 @@ function getMatchStatus(match: Match) {
     borderColor: "border-emerald-200",
   };
 }
+function useInstallPrompt() {
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstalled, setIsInstalled] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    // Zaten yüklü mü kontrol et
+    const isStandalone = window.matchMedia("(display-mode: standalone)").matches;
+    const isIOSStandalone = (window.navigator as any).standalone === true;
+    if (isStandalone || isIOSStandalone) {
+      setIsInstalled(true);
+      return;
+    }
+
+    const handler = (e: any) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener("beforeinstallprompt", handler);
+
+    window.addEventListener("appinstalled", () => {
+      setIsInstalled(true);
+      setDeferredPrompt(null);
+    });
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handler);
+    };
+  }, []);
+
+  const promptInstall = async () => {
+    if (!deferredPrompt) {
+      // iOS Safari için manuel talimat
+      alert(
+        "📱 Uygulamayı yüklemek için:\n\n1. Safari'de paylaş ikonuna bas (kare + yukarı ok)\n2. Aşağı kaydır\n3. 'Ana Ekrana Ekle' seçeneğine bas"
+      );
+      return;
+    }
+
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === "accepted") {
+      setIsInstalled(true);
+    }
+    setDeferredPrompt(null);
+  };
+
+  // iOS detect (Chrome iOS dahil — onlar da install prompt göstermez)
+  const isIOS =
+    typeof window !== "undefined" &&
+    /iPad|iPhone|iPod/.test(window.navigator.userAgent);
+
+  return {
+    canInstall: !isInstalled && (!!deferredPrompt || isIOS),
+    isInstalled,
+    promptInstall,
+  };
+}
 
 export default function Home() {
+  const { canInstall, promptInstall } = useInstallPrompt();
   const [players, setPlayers] = useState<Player[]>([]);
   const [matches, setMatches] = useState<Match[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
@@ -1430,6 +1491,14 @@ export default function Home() {
         {activeTab === "dashboard" && (
           <section className="rounded-[1.75rem] border-4 border-red-50 bg-white p-4 shadow-2xl shadow-red-100/70 md:rounded-[2rem] md:p-6">
             <h2 className="mb-6 text-xl font-black">🏆 Dashboard</h2>
+            {canInstall && (
+  <button
+    onClick={promptInstall}
+    className="mb-4 inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-sm font-black text-red-600 transition hover:bg-red-100"
+  >
+    📱 Uygulama olarak yükle
+  </button>
+)}
 
             <DashboardHero leaderName={sortedPlayers[0]?.name || "-"} />
 
