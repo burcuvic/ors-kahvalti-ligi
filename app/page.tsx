@@ -472,6 +472,7 @@ export default function Home() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [bonusLogs, setBonusLogs] = useState<BonusLog[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [loginName, setLoginName] = useState("");
@@ -505,27 +506,28 @@ export default function Home() {
   >({});
 
   const loadData = async () => {
-    const { data: playersData } = await supabase.from("players").select("*");
+  const { data: playersData } = await supabase.from("players").select("*");
 
-    const { data: matchesData } = await supabase
-      .from("matches")
-      .select("*")
-      .order("match_time", { ascending: true });
+  const { data: matchesData } = await supabase
+    .from("matches")
+    .select("*")
+    .order("match_time", { ascending: true });
 
-    const { data: predictionsData } = await supabase
-      .from("predictions")
-      .select("*");
+  const { data: predictionsData } = await supabase
+    .from("predictions")
+    .select("*");
 
-    const { data: bonusData } = await supabase
-      .from("bonus_logs")
-      .select("*")
-      .order("created_at", { ascending: false });
+  const { data: bonusData } = await supabase
+    .from("bonus_logs")
+    .select("*")
+    .order("created_at", { ascending: false });
 
-    setPlayers(playersData || []);
-    setMatches(matchesData || []);
-    setPredictions(predictionsData || []);
-    setBonusLogs(bonusData || []);
-  };
+  setPlayers(playersData || []);
+  setMatches(matchesData || []);
+  setPredictions(predictionsData || []);
+  setBonusLogs(bonusData || []);
+  setIsLoading(false);
+};
 
   useEffect(() => {
     loadData();
@@ -1356,6 +1358,10 @@ export default function Home() {
     await loadData();
   };
 
+  if (isLoading) {
+  return <LoadingScreen />;
+}
+
   if (!currentPlayer) {
     return (
       <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#FFF7E8] p-4 text-slate-900">
@@ -1575,10 +1581,8 @@ export default function Home() {
             />
 
             {predictionMatches.length === 0 && (
-              <div className="rounded-[1.75rem] bg-amber-50 p-6 text-slate-600">
-                Bu filtrede maç yok 😄
-              </div>
-            )}
+  <MascotEmpty text="Bu filtrede tahmin edilecek maç yok. Filtreyi değiştirip bakabilirsin 😄" />
+)}
 
             <div className="space-y-4">
               {predictionMatches.map((match) => {
@@ -1703,6 +1707,9 @@ export default function Home() {
               onChange={setMatchListFilter}
             />
 
+{matchListMatches.length === 0 && (
+  <MascotEmpty text="Bu filtrede maç bulunamadı. Başka filtre dener misin? 🔎" />
+)}
             <div className="space-y-4">
               {matchListMatches.map((match) => {
                 const matchBonuses = bonusLogs.filter(
@@ -3043,5 +3050,39 @@ function ScoreTable({
         </tbody>
       </table>
     </div>
+  );
+}
+function LoadingScreen() {
+  return (
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#FFF7E8] p-4 text-slate-900">
+      <div className="pointer-events-none fixed left-[-8rem] top-[-8rem] h-80 w-80 rounded-full bg-amber-300/40 blur-3xl" />
+      <div className="pointer-events-none fixed right-[-8rem] bottom-[-8rem] h-80 w-80 rounded-full bg-red-300/30 blur-3xl" />
+
+      <div className="relative flex flex-col items-center gap-6">
+        <div className="relative">
+          <div className="absolute inset-0 animate-ping rounded-full bg-red-300/40 blur-2xl" />
+          <img
+            src={MASCOT_SRC}
+            alt="ORS maskotu"
+            className="relative h-32 w-32 animate-bounce object-contain drop-shadow-2xl md:h-40 md:w-40"
+          />
+        </div>
+
+        <div className="text-center">
+          <div className="text-2xl font-black text-slate-900">
+            ORS Kahvaltı Ligi
+          </div>
+          <div className="mt-1 text-sm font-bold text-red-500">
+            Maçlar yükleniyor... ⚽
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <div className="h-3 w-3 animate-bounce rounded-full bg-red-500 [animation-delay:-0.3s]" />
+          <div className="h-3 w-3 animate-bounce rounded-full bg-amber-400 [animation-delay:-0.15s]" />
+          <div className="h-3 w-3 animate-bounce rounded-full bg-orange-500" />
+        </div>
+      </div>
+    </main>
   );
 }
