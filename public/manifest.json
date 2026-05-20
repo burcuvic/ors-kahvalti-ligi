@@ -1,0 +1,25 @@
+{
+  "name": "ORS Kahvaltı Ligi",
+  "short_name": "ORS Ligi",
+  "description": "ORS Kahvaltı Ligi - World Cup 2026 Edition. Tahmin Et, Kazan, Kahvaltıdan Kaç!",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FFF7E8",
+  "theme_color": "#ef4444",
+  "lang": "tr",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
