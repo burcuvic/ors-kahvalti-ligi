@@ -1886,6 +1886,13 @@ export default function Home() {
   matches={matches}
   predictions={predictions}
 />
+
+<ShareableCard
+  player={profilePlayer}
+  rank={sortedPlayers.findIndex((p) => p.id === profilePlayer.id) + 1}
+  totalPlayers={players.length}
+  streak={playerStreaks[profilePlayer.id] || 0}
+/>
             <div className="mb-6 grid gap-3 md:grid-cols-4">
               <ProfileInsightCard
                 title="En Çok Doğru Bildiği Ülke"
@@ -3351,6 +3358,138 @@ function HeadToHeadCard({
           )}
         </>
       )}
+    </div>
+  );
+}
+function ShareableCard({
+  player,
+  rank,
+  totalPlayers,
+  streak,
+}: {
+  player: Player;
+  rank: number;
+  totalPlayers: number;
+  streak: number;
+}) {
+  const [isGenerating, setIsGenerating] = useState(false);
+  const theme = getCountryTheme(player.champion_team);
+
+  const generateImage = async () => {
+    setIsGenerating(true);
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const element = document.getElementById(`shareable-card-${player.id}`);
+      if (!element) return;
+
+      const canvas = await html2canvas(element, {
+        backgroundColor: "#FFF7E8",
+        scale: 2,
+        useCORS: true,
+        logging: false,
+      });
+
+      const link = document.createElement("a");
+      link.download = `ors-${player.name.toLowerCase()}-${Date.now()}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    } catch (error) {
+      console.error(error);
+      alert("Resim oluşturulamadı 😞");
+    }
+    setIsGenerating(false);
+  };
+
+  return (
+    <div className="mb-6">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-xl font-black">📸 Paylaşılabilir Kart</h3>
+        <button
+          onClick={generateImage}
+          disabled={isGenerating}
+          className="rounded-2xl bg-gradient-to-r from-red-500 to-pink-500 px-5 py-3 font-black text-white shadow-lg shadow-red-200 transition hover:scale-[1.02] disabled:opacity-50"
+        >
+          {isGenerating ? "🎨 Oluşturuluyor..." : "📥 İndir & Paylaş"}
+        </button>
+      </div>
+
+      <div className="overflow-hidden rounded-3xl">
+        <div
+          id={`shareable-card-${player.id}`}
+          className={`relative aspect-[4/5] w-full max-w-md overflow-hidden bg-gradient-to-br ${theme.card} p-6`}
+        >
+          <div className="absolute -right-10 -top-10 h-48 w-48 rounded-full bg-white/25" />
+          <div className="absolute -bottom-20 -left-10 h-60 w-60 rounded-full bg-white/20" />
+
+          <div className="relative flex h-full flex-col justify-between text-slate-950">
+            <div>
+              <div className="inline-flex rounded-full bg-white/60 px-3 py-1 text-xs font-black uppercase tracking-wide">
+                ORS Kahvaltı Ligi 🏆
+              </div>
+              <div className="mt-2 text-xs font-black uppercase opacity-70">
+                World Cup 2026 Edition
+              </div>
+            </div>
+
+            <div>
+              <div className="text-xs font-black uppercase opacity-80">
+                Oyuncu
+              </div>
+              <div className="text-4xl font-black leading-none">
+                {player.name}
+              </div>
+              <div className="mt-2 text-base font-black opacity-80">
+                {theme.name}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-2xl bg-white/50 p-3 backdrop-blur">
+                <div className="text-xs font-black uppercase opacity-70">
+                  Toplam Puan
+                </div>
+                <div className="text-3xl font-black">
+                  {player.total_points || 0}
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-white/50 p-3 backdrop-blur">
+                <div className="text-xs font-black uppercase opacity-70">
+                  Sıralama
+                </div>
+                <div className="text-3xl font-black">
+                  #{rank}/{totalPlayers}
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-white/50 p-3 backdrop-blur">
+                <div className="text-xs font-black uppercase opacity-70">
+                  Başarı
+                </div>
+                <div className="text-3xl font-black">
+                  %{player.success_rate || 0}
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-white/50 p-3 backdrop-blur">
+                <div className="text-xs font-black uppercase opacity-70">
+                  Streak
+                </div>
+                <div className="text-3xl font-black">🔥 {streak}</div>
+              </div>
+            </div>
+
+            <div className="text-center text-xs font-black opacity-60">
+              ⚽ Tahmin Et • Kazan • Kahvaltıdan Kaç 🥯
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p className="mt-3 text-xs font-bold text-slate-500">
+        💡 İndir butonuna bas, kart PNG olarak telefonuna iner. WhatsApp gruba
+        atabilir, Instagram'a koyabilirsin 📱
+      </p>
     </div>
   );
 }
