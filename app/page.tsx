@@ -33,6 +33,7 @@ type Match = {
 type Prediction = {
   id: string; player_id: string; match_id: string;
   prediction: string; points: number;
+  is_joker?: boolean | null;
 };
 
 type BonusLog = {
@@ -131,6 +132,172 @@ function shareMatchReminder(match: Match) {
   const date = new Date(match.match_time).toLocaleString("tr-TR", { day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" });
   const message = `⚽ ${match.home_team} vs ${match.away_team}\n📅 ${date}\n🏆 ${match.league || "Dünya Kupası"}\n\nTahminini yap, simitten kaç! 🥯\n\n👉 ${APP_URL}`;
   shareToWhatsApp(message);
+}
+
+// === GÜNÜN ÖZETİ ===
+function shareDailySummary(
+  players: Player[],
+  matches: Match[],
+  predictions: Prediction[]
+) {
+  const now = new Date();
+  const today = new Date(now); today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+
+  const todayMatches = matches.filter((m) => {
+    const t = new Date(m.match_time);
+    return t >= today && t < tomorrow;
+  });
+
+  const todayFinished = todayMatches.filter((m) => m.result);
+
+  const sorted = [...players].sort((a, b) => Number(b.total_points || 0) - Number(a.total_points || 0));
+  const lider = sorted[0];
+  const kurbanlar = sorted.slice(-2).reverse();
+
+  // Bugünün kahini: en çok doğru bildiği
+  const todayStats = players.map((p) => {
+    let correct = 0, total = 0;
+    todayFinished.forEach((m) => {
+      const pred = predictions.find((pr) => pr.player_id === p.id && pr.match_id === m.id);
+      if (pred && pred.prediction !== "YOK") {
+        total++;
+        if (pred.prediction === m.result) correct++;
+      }
+    });
+    return { player: p, correct, total };
+  });
+
+  const todayKahin = [...todayStats].sort((a, b) => b.correct - a.correct)[0];
+  const todayKurban = [...todayStats].filter((s) => s.total > 0).sort((a, b) => a.correct - b.correct)[0];
+
+  const openCount = matches.filter((m) => {
+    return !m.result && new Date(m.match_time).getTime() > Date.now();
+  }).length;
+
+  const dateStr = now.toLocaleDateString("tr-TR", { day: "2-digit", month: "long", weekday: "long" });
+
+  let message = `🌅 ORS Kahvaltı Ligi — Günün Özeti\n📅 ${dateStr}\n\n`;
+  message += `🏆 Genel Lider: ${lider?.name || "—"} (${lider?.total_points || 0} puan)\n`;
+  message += `🥯 Kahvaltı Hattı: ${kurbanlar.map((p) => p.name).join(", ") || "—"}\n\n`;
+
+  if (todayFinished.length > 0) {
+    message += `🔥 Bugünün Kahini: ${todayKahin?.player.name || "—"} (${todayKahin?.correct || 0}/${todayKahin?.total || 0})\n`;
+    if (todayKurban && todayKurban.correct < todayKurban.total) {
+      message += `💔 Bugün Yandı: ${todayKurban.player.name} (${todayKurban.correct}/${todayKurban.total})\n`;
+    }
+    message += `\n⚽ Bugün ${todayFinished.length} maç oynandı\n`;
+  } else {
+    message += `⚽ Bugün henüz maç sonuçlanmadı\n`;
+  }
+
+  message += `📊 Açık maç: ${openCount}\n\n`;
+  message += `👉 ${APP_URL}`;
+
+  shareToWhatsApp(message);
+}
+
+// === PDF RAPORU ===
+async function downloadPDFReport(
+  players: Player[],
+  matches: Match[],
+  predictions: Prediction[]
+) {
+  const jsPDFModule = await import("jspdf");
+  const autoTableModule = await import("jspdf-autotable");
+  const jsPDF = jsPDFModule.default;
+  const autoTable = autoTableModule.default;
+
+  const doc = new jsPDF();
+
+  // Başlık
+  doc.setFontSize(24);
+  doc.setTextColor(220, 38, 38);
+  doc.text("ORS Kahvalti Ligi", 105, 20, { align: "center" });
+
+  doc.setFontSize(14);
+  doc.setTextColor(245, 158, 11);
+  doc.text("World Cup 2026 Edition", 105, 30, { align: "center" });
+
+  doc.setFontSize(10);
+  doc.setTextColor(100, 116, 139);
+  const dateStr = new Date().toLocaleDateString("tr-TR", { day: "2-digit", month: "long", year: "numeric" });
+  doc.text(`Rapor Tarihi: ${dateStr}`, 105, 38, { align: "center" });
+
+  // Genel Sıralama
+  const sorted = [...players].sort((a, b) => Number(b.total_points || 0) - Number(a.total_points || 0));
+
+  autoTable(doc, {
+    startY: 50,
+    head: [["#", "Oyuncu", "Dogru", "Yanlis", "Tahmin Yok", "Ek Puan", "PUAN", "Basari", "Sampiyon"]],
+    body: sorted.map((p, i) => [
+      i + 1,
+      p.name,
+      p.correct_count || 0,
+      p.wrong_count || 0,
+      p.intentional_blank || 0,
+      p.bonus_points || 0,
+      p.total_points || 0,
+      `%${p.success_rate || 0}`,
+      p.champion_team || "-",
+    ]),
+    styles: { fontSize: 9, cellPadding: 3 },
+    headStyles: { fillColor: [239, 68, 68], textColor: 255, fontStyle: "bold" },
+    alternateRowStyles: { fillColor: [254, 243, 199] },
+    columnStyles: { 6: { fontStyle: "bold", textColor: [37, 99, 235] } },
+  });
+
+  // İstatistikler
+  const finalY = (doc as any).lastAutoTable?.finalY || 50;
+
+  doc.setFontSize(14);
+  doc.setTextColor(0, 0, 0);
+  doc.text("Turnuva Istatistikleri", 14, finalY + 15);
+
+  const finishedMatches = matches.filter((m) => m.result).length;
+  const allPredictions = predictions.length;
+  const championPicks: Record<string, string[]> = {};
+  players.forEach((p) => {
+    if (p.champion_team) {
+      if (!championPicks[p.champion_team]) championPicks[p.champion_team] = [];
+      championPicks[p.champion_team].push(p.name);
+    }
+  });
+
+  autoTable(doc, {
+    startY: finalY + 20,
+    head: [["Metrik", "Deger"]],
+    body: [
+      ["Toplam mac", String(matches.length)],
+      ["Oynanan mac", String(finishedMatches)],
+      ["Toplam tahmin", String(allPredictions)],
+      ["Aktif oyuncu", String(players.length)],
+    ],
+    styles: { fontSize: 10, cellPadding: 4 },
+    headStyles: { fillColor: [245, 158, 11], textColor: [30, 41, 59], fontStyle: "bold" },
+  });
+
+  // Şampiyon tahminleri
+  const finalY2 = (doc as any).lastAutoTable?.finalY || finalY;
+
+  doc.setFontSize(14);
+  doc.text("Sampiyon Tahminleri", 14, finalY2 + 15);
+
+  autoTable(doc, {
+    startY: finalY2 + 20,
+    head: [["Ulke", "Secen Oyuncular"]],
+    body: Object.entries(championPicks).map(([team, names]) => [team, names.join(", ")]),
+    styles: { fontSize: 10, cellPadding: 4 },
+    headStyles: { fillColor: [225, 29, 72], textColor: 255, fontStyle: "bold" },
+  });
+
+  // Footer
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`ors-kahvalti-ligi.vercel.app | Olusturulma: ${new Date().toLocaleString("tr-TR")}`, 105, 285, { align: "center" });
+
+  // İndir
+  doc.save(`ORS-Kahvalti-Ligi-${new Date().toISOString().slice(0, 10)}.pdf`);
 }
 
 // === MAÇ DURUMU ===
@@ -338,6 +505,8 @@ export default function Home() {
   const [matchListFilter, setMatchListFilter] = useState("Tümü");
 
   const [profilePlayerId, setProfilePlayerId] = useState("");
+  const [compareLeftId, setCompareLeftId] = useState("");
+  const [compareRightId, setCompareRightId] = useState("");
 
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [adminPassword, setAdminPassword] = useState("");
@@ -372,7 +541,9 @@ export default function Home() {
     if (!savedId || players.length === 0) return;
     const player = players.find((p) => p.id === savedId);
     if (player) { setCurrentPlayer(player); setProfilePlayerId(player.id); }
-  }, [players]);
+    if (!compareLeftId && players[0]) setCompareLeftId(players[0].id);
+    if (!compareRightId && players[1]) setCompareRightId(players[1].id);
+  }, [players, compareLeftId, compareRightId]);
 
   useEffect(() => {
     if (!currentPlayer) return;
@@ -559,12 +730,36 @@ export default function Home() {
     };
   };
 
-  const makePrediction = async (match: Match, prediction: string) => {
+  const getJokerStageKey = (match: Match) => {
+    if (match.league?.startsWith("Grup")) return "Gruplar";
+    return match.league || "Dünya Kupası";
+  };
+
+  const getUsedJokerForStage = (match: Match, playerId: string) => {
+    const stageKey = getJokerStageKey(match);
+    return predictions.find((pred) => {
+      if (pred.player_id !== playerId || !pred.is_joker) return false;
+      const predMatch = matches.find((m) => m.id === pred.match_id);
+      return predMatch && getJokerStageKey(predMatch) === stageKey;
+    });
+  };
+
+  const makePrediction = async (match: Match, prediction: string, useJoker = false) => {
     if (!currentPlayer) return;
     if (new Date(match.match_time).getTime() <= Date.now()) { alert("Maç saati geldiği için tahmin kapandı 😄"); return; }
     if (match.result) { alert("Bu maç sonuçlanmış."); return; }
+
+    if (useJoker) {
+      const usedJoker = getUsedJokerForStage(match, currentPlayer.id);
+      if (usedJoker && usedJoker.match_id !== match.id) {
+        const jokerMatch = matches.find((m) => m.id === usedJoker.match_id);
+        alert(`Bu aşamada joker hakkını zaten kullandın 🃏\n${jokerMatch ? `${jokerMatch.home_team} - ${jokerMatch.away_team}` : "Başka bir maç"}`);
+        return;
+      }
+    }
+
     const { error } = await supabase.from("predictions").upsert(
-      { player_id: currentPlayer.id, match_id: match.id, prediction, points: 0 },
+      { player_id: currentPlayer.id, match_id: match.id, prediction, points: 0, is_joker: useJoker },
       { onConflict: "player_id,match_id" }
     );
     if (error) { alert(error.message); return; }
@@ -619,9 +814,16 @@ export default function Home() {
         if (!finalResult) continue;
 
         let points = -3;
-        if (pred.prediction === "YOK") { blank++; points = -3; }
-        else if (pred.prediction === finalResult) { correct++; points = 3; }
-        else { wrong++; points = -1; }
+        if (pred.prediction === "YOK") {
+          blank++;
+          points = -3;
+        } else if (pred.prediction === finalResult) {
+          correct++;
+          points = pred.is_joker ? 6 : 3;
+        } else {
+          wrong++;
+          points = pred.is_joker ? -2 : -1;
+        }
 
         predictionPoints += points;
         await supabase.from("predictions").update({ points }).eq("id", pred.id);
@@ -643,7 +845,7 @@ export default function Home() {
       const exists = predictions.some((p) => p.player_id === player.id && p.match_id === match.id);
       if (!exists) {
         await supabase.from("predictions").insert({
-          player_id: player.id, match_id: match.id, prediction: "YOK", points: -3,
+          player_id: player.id, match_id: match.id, prediction: "YOK", points: -3, is_joker: false,
         });
       }
     }
@@ -755,7 +957,9 @@ export default function Home() {
     );
   }
 
-  const tabs = ["dashboard", "tahmin", "maclar", "profil", currentPlayer.is_admin ? "admin" : ""].filter(Boolean);
+  const tabs = currentPlayer.is_admin
+    ? ["dashboard", "tahmin", "maclar", "profil", "karsilastir", "admin"]
+    : ["dashboard", "tahmin", "maclar", "profil", "karsilastir"];
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#FFF7E8] text-slate-900">
@@ -787,6 +991,14 @@ export default function Home() {
                 📢 WhatsApp Hatırlat
               </button>
             )}
+            {currentPlayer.is_admin && (
+              <button
+                onClick={() => shareDailySummary(players, matches, predictions)}
+                className="rounded-full bg-amber-400 px-4 py-2 text-sm font-black text-slate-950 hover:bg-amber-500 transition"
+              >
+                🌅 Günün Özeti
+              </button>
+            )}
             <button onClick={logout} className="rounded-full bg-red-500 px-4 py-2 text-sm font-black text-white">Çıkış</button>
           </div>
 
@@ -798,6 +1010,7 @@ export default function Home() {
                 {tab === "tahmin" && "Tahmin Yap"}
                 {tab === "maclar" && "Maçlar"}
                 {tab === "profil" && "Profil"}
+                {tab === "karsilastir" && "Karşılaştır"}
                 {tab === "admin" && "Admin"}
               </button>
             ))}
@@ -809,7 +1022,18 @@ export default function Home() {
         {/* DASHBOARD */}
         {activeTab === "dashboard" && (
           <section className="rounded-[1.75rem] border-4 border-red-50 bg-white p-4 shadow-2xl shadow-red-100/70 md:rounded-[2rem] md:p-6">
-            <h2 className="mb-6 text-xl font-black">🏆 Dashboard</h2>
+            <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-xl font-black">🏆 Dashboard</h2>
+
+              {currentPlayer.is_admin && (
+                <button
+                  onClick={() => downloadPDFReport(players, matches, predictions)}
+                  className="rounded-full bg-slate-900 px-4 py-2 text-sm font-black text-white hover:bg-slate-700 transition"
+                >
+                  📄 PDF Rapor
+                </button>
+              )}
+            </div>
             <MatchdayBanner matches={matches} />
 
             <div className="mb-6 grid gap-3 md:grid-cols-3">
@@ -866,17 +1090,34 @@ export default function Home() {
                     {isStarted || match.result ? (
                       <div className="rounded-2xl bg-white p-3 text-center font-black text-slate-500">Tahmin kapandı 🔒</div>
                     ) : (
-                      <div className="grid grid-cols-3 gap-2">
-                        {["1", "X", "2"].map((v) => (
-                          <button key={v} onClick={() => makePrediction(match, v)}
-                            className={`rounded-2xl py-3 text-lg font-black md:py-3 md:text-base ${myPrediction?.prediction === v ? "bg-amber-400 text-slate-950" : "border border-amber-100 bg-white hover:bg-amber-100"}`}>
-                            {v}
-                          </button>
-                        ))}
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-3 gap-2">
+                          {["1", "X", "2"].map((v) => (
+                            <button key={v} onClick={() => makePrediction(match, v, false)}
+                              className={`rounded-2xl py-3 text-lg font-black md:py-3 md:text-base ${myPrediction?.prediction === v && !myPrediction?.is_joker ? "bg-amber-400 text-slate-950" : "border border-amber-100 bg-white hover:bg-amber-100"}`}>
+                              {v}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-3 gap-2">
+                          {["1", "X", "2"].map((v) => {
+                            const stageJoker = getUsedJokerForStage(match, currentPlayer.id);
+                            const jokerBlocked = !!stageJoker && stageJoker.match_id !== match.id;
+                            return (
+                              <button key={`joker-${v}`} onClick={() => makePrediction(match, v, true)} disabled={jokerBlocked}
+                                className={`rounded-2xl border-2 py-2 text-xs font-black transition ${myPrediction?.prediction === v && myPrediction?.is_joker ? "border-purple-500 bg-purple-600 text-white shadow-lg shadow-purple-200" : jokerBlocked ? "cursor-not-allowed border-slate-100 bg-slate-100 text-slate-400" : "border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100"}`}>
+                                🃏 Joker {v}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="rounded-2xl border border-purple-100 bg-purple-50 px-3 py-2 text-xs font-bold text-purple-700">
+                          🃏 Joker kuralı: Her aşamada 1 hak. Doğru joker +6, yanlış joker -2.
+                        </div>
                       </div>
                     )}
 
-                    {myPrediction && <p className="mt-3 text-sm font-bold text-amber-600">Tahminin: {myPrediction.prediction}</p>}
+                    {myPrediction && <p className="mt-3 text-sm font-bold text-amber-600">Tahminin: {myPrediction.prediction}{myPrediction.is_joker ? " 🃏 Jokerli" : ""}</p>}
 
                     {myPrediction && (
                       <div className="mt-4 rounded-2xl border-2 border-amber-200 bg-amber-50 px-3 py-2.5 text-sm font-black text-amber-900">
@@ -955,7 +1196,7 @@ export default function Home() {
                             <span className="font-black">
                               {!isStarted && !match.result && !currentPlayer.is_admin
                                 ? "Gizli 🔒"
-                                : pred ? `${pred.prediction} (${pred.points})` : "Yok"}
+                                : pred ? `${pred.prediction}${pred.is_joker ? " 🃏" : ""} (${pred.points})` : "Yok"}
                             </span>
                           </div>
                         );
@@ -1002,6 +1243,14 @@ export default function Home() {
               rank={sortedPlayers.findIndex((p) => p.id === profilePlayer.id) + 1}
               streak={playerStreaks[profilePlayer.id] || 0} />
 
+            <BadgePanel
+              player={profilePlayer}
+              sortedPlayers={sortedPlayers}
+              playerStreaks={playerStreaks}
+              predictions={predictions}
+              matches={matches}
+            />
+
             <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
               <StatBox title="PUAN" value={profilePlayer.total_points || 0} />
               <StatBox title="DOĞRU" value={profilePlayer.correct_count || 0} />
@@ -1037,7 +1286,7 @@ export default function Home() {
                       </div>
                       <div className="text-xs text-slate-500">{p.match?.league || "-"}</div>
                     </div>
-                    <div className="text-sm font-bold">Tahmin: {p.prediction}</div>
+                    <div className="text-sm font-bold">Tahmin: {p.prediction}{p.is_joker ? " 🃏" : ""}</div>
                     <div className="text-sm font-bold">Sonuç: {p.match?.result || "—"}</div>
                     <div className="rounded-lg bg-slate-100 px-3 py-1 text-sm font-black">
                       {p.match?.result ? `${p.points > 0 ? "+" : ""}${p.points}` : "Bekliyor"}
@@ -1046,6 +1295,25 @@ export default function Home() {
                 ))}
               </div>
             </div>
+          </section>
+        )}
+
+
+        {/* KARŞILAŞTIR */}
+        {activeTab === "karsilastir" && (
+          <section className="rounded-[1.75rem] border-4 border-red-50 bg-white p-4 shadow-2xl shadow-red-100/70 md:rounded-[2rem] md:p-6">
+            <RivalCompare
+              players={players}
+              sortedPlayers={sortedPlayers}
+              predictions={predictions}
+              matches={matches}
+              playerStreaks={playerStreaks}
+              leftId={compareLeftId}
+              rightId={compareRightId}
+              setLeftId={setCompareLeftId}
+              setRightId={setCompareRightId}
+              onProfile={(id) => { setProfilePlayerId(id); setActiveTab("profil"); }}
+            />
           </section>
         )}
 
@@ -1360,12 +1628,358 @@ function StageFilter({ selectedStage, setSelectedStage }: { selectedStage: strin
   );
 }
 
+
+type BadgeItem = { icon: string; title: string; desc: string; tone: string };
+
+function getPlayerBadges(
+  player: Player,
+  sortedPlayers: Player[],
+  playerStreaks: Record<string, number>,
+  predictions: Prediction[],
+  matches: Match[]
+): BadgeItem[] {
+  const rank = sortedPlayers.findIndex((p) => p.id === player.id) + 1;
+  const totalPlayers = sortedPlayers.length;
+  const bottomTwo = sortedPlayers.slice(-2).some((p) => p.id === player.id);
+  const answered = Number(player.correct_count || 0) + Number(player.wrong_count || 0);
+  const correct = Number(player.correct_count || 0);
+  const wrong = Number(player.wrong_count || 0);
+  const totalPoints = Number(player.total_points || 0);
+  const bonus = Number(player.bonus_points || 0);
+  const blanks = Number(player.intentional_blank || 0);
+  const force = Number(player.force_majeure || 0);
+  const success = Number(player.success_rate || 0);
+  const streak = playerStreaks[player.id] || 0;
+
+  const finishedPreds = predictions.filter((pred) => {
+    const match = matches.find((m) => m.id === pred.match_id);
+    return pred.player_id === player.id && !!match?.result && pred.prediction !== "YOK" && pred.prediction !== "BILINMIYOR";
+  });
+  const allPreds = predictions.filter((pred) => pred.player_id === player.id && pred.prediction !== "YOK" && pred.prediction !== "BILINMIYOR");
+  const jokerPreds = allPreds.filter((pred) => !!pred.is_joker);
+  const jokerCorrect = jokerPreds.filter((pred) => {
+    const match = matches.find((m) => m.id === pred.match_id);
+    return !!match?.result && pred.prediction === match.result;
+  }).length;
+  const jokerWrong = jokerPreds.filter((pred) => {
+    const match = matches.find((m) => m.id === pred.match_id);
+    return !!match?.result && pred.prediction !== match.result;
+  }).length;
+
+  const allPlayersWithSuccess = sortedPlayers
+    .filter((p) => Number(p.correct_count || 0) + Number(p.wrong_count || 0) > 0)
+    .sort((a, b) => Number(b.success_rate || 0) - Number(a.success_rate || 0));
+  const bestSuccessId = allPlayersWithSuccess[0]?.id;
+  const worstSuccessId = allPlayersWithSuccess[allPlayersWithSuccess.length - 1]?.id;
+
+  const pointsSorted = [...sortedPlayers].sort((a, b) => Number(b.total_points || 0) - Number(a.total_points || 0));
+  const leader = pointsSorted[0];
+  const leaderGap = leader && leader.id !== player.id ? Number(leader.total_points || 0) - totalPoints : 0;
+
+  let herdTotal = 0;
+  let herdMatch = 0;
+  let soloCorrect = 0;
+  let comebackWins = 0;
+  let latePanic = 0;
+  let exactUnderdog = 0;
+  let homePicks = 0;
+  let drawPicks = 0;
+  let awayPicks = 0;
+  let totalPredictionPoints = 0;
+
+  allPreds.forEach((pred) => {
+    if (pred.prediction === "1") homePicks++;
+    if (pred.prediction === "X") drawPicks++;
+    if (pred.prediction === "2") awayPicks++;
+
+    const match = matches.find((m) => m.id === pred.match_id);
+    if (!match) return;
+    const diffMinutes = (new Date(match.match_time).getTime() - Date.now()) / (1000 * 60);
+    if (diffMinutes > 0 && diffMinutes <= 15) latePanic++;
+
+    if (!match.result) return;
+    totalPredictionPoints += Number(pred.points || 0);
+
+    const matchPreds = predictions.filter((p) => p.match_id === pred.match_id && p.prediction !== "YOK" && p.prediction !== "BILINMIYOR");
+    if (matchPreds.length < 3) return;
+    const counts = { "1": 0, X: 0, "2": 0 };
+    matchPreds.forEach((p) => { if (p.prediction in counts) counts[p.prediction as "1" | "X" | "2"]++; });
+    const sortedCounts = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    const majority = sortedCounts[0]?.[0];
+    const minority = sortedCounts[2]?.[0];
+    if (!majority) return;
+    herdTotal++;
+    if (pred.prediction === majority) herdMatch++;
+    if (pred.prediction === minority && pred.prediction === match.result && sortedCounts[2][1] <= 1) soloCorrect++;
+    if (pred.prediction !== majority && pred.prediction === match.result) exactUnderdog++;
+  });
+
+  // Son 5 sonuç içinde dipten çıkış hissi için küçük bir metrik
+  const lastFinished = finishedPreds.slice(-5);
+  if (lastFinished.length >= 3) {
+    const positives = lastFinished.filter((p) => Number(p.points || 0) > 0).length;
+    if (positives >= 3 && bottomTwo) comebackWins = positives;
+  }
+
+  const herdPct = herdTotal > 0 ? Math.round((herdMatch / herdTotal) * 100) : 0;
+  const favoritePick = Math.max(homePicks, drawPicks, awayPicks);
+  const favoritePickLabel = favoritePick === homePicks ? "1" : favoritePick === awayPicks ? "2" : "X";
+
+  const add = (condition: boolean, badge: BadgeItem) => {
+    if (condition) badges.push(badge);
+  };
+
+  const badges: BadgeItem[] = [];
+
+  add(rank === 1, { icon: "👑", title: "Genel Lider", desc: "Puan tablosunun tepesinde", tone: "bg-amber-100 text-amber-800 border-amber-200" });
+  add(rank === 2, { icon: "🥈", title: "Gümüş Koltuk", desc: "Liderin ensesinde", tone: "bg-slate-100 text-slate-700 border-slate-200" });
+  add(rank === 3, { icon: "🥉", title: "Bronz Güç", desc: "Podyumda sağlam duruyor", tone: "bg-orange-100 text-orange-800 border-orange-200" });
+  add(rank <= 3, { icon: "🏆", title: "Podyum Oyuncusu", desc: `Sıralama: #${rank}`, tone: "bg-yellow-100 text-yellow-800 border-yellow-200" });
+  add(rank <= Math.ceil(totalPlayers / 2), { icon: "🛡️", title: "Üst Blok", desc: "Tablonun güvenli tarafında", tone: "bg-blue-100 text-blue-800 border-blue-200" });
+  add(bottomTwo, { icon: "🥯", title: "Simit Hattı", desc: "Kahvaltı baskısı yüksek", tone: "bg-red-100 text-red-700 border-red-200" });
+  add(rank === totalPlayers, { icon: "🧯", title: "Acil Toparlanma", desc: "Son sıradan çıkış operasyonu", tone: "bg-rose-100 text-rose-700 border-rose-200" });
+  add(leaderGap > 0 && leaderGap <= 5, { icon: "👀", title: "Lidere Nefes", desc: `${leaderGap} puan fark kaldı`, tone: "bg-indigo-100 text-indigo-800 border-indigo-200" });
+  add(leaderGap >= 25, { icon: "🧗", title: "Dağ Tırmanışı", desc: `${leaderGap} puanlık kapanacak fark`, tone: "bg-stone-100 text-stone-700 border-stone-200" });
+  add(bestSuccessId === player.id, { icon: "🧙", title: "Baş Kahin", desc: "En yüksek başarı oranı", tone: "bg-purple-100 text-purple-800 border-purple-200" });
+  add(worstSuccessId === player.id && answered > 0, { icon: "💔", title: "Bugün Yandı", desc: "Toparlanma haftası şart", tone: "bg-rose-100 text-rose-700 border-rose-200" });
+  add(streak >= 10, { icon: "🌋", title: "Lav Modu", desc: `${streak} maçlık efsane seri`, tone: "bg-red-100 text-red-800 border-red-200" });
+  add(streak >= 5 && streak < 10, { icon: "🔥", title: "Alev Modu", desc: `${streak} maçlık doğru seri`, tone: "bg-orange-100 text-orange-800 border-orange-200" });
+  add(streak >= 3 && streak < 5, { icon: "⚡", title: "Formda", desc: `${streak} maçlık seri`, tone: "bg-sky-100 text-sky-800 border-sky-200" });
+  add(streak === 0 && answered > 0, { icon: "🧊", title: "Seri Reset", desc: "Yeni seri başlatma zamanı", tone: "bg-slate-100 text-slate-700 border-slate-200" });
+  add(success >= 70 && answered >= 5, { icon: "🤖", title: "Algoritma Gibi", desc: `%${success} başarı`, tone: "bg-cyan-100 text-cyan-800 border-cyan-200" });
+  add(success >= 60 && answered >= 5, { icon: "🎯", title: "Keskin Nişancı", desc: `%${success} başarı`, tone: "bg-blue-100 text-blue-800 border-blue-200" });
+  add(success >= 50 && answered >= 5, { icon: "✅", title: "Pozitif Bölge", desc: "Doğrular önde", tone: "bg-emerald-100 text-emerald-800 border-emerald-200" });
+  add(success > 0 && success < 40 && answered >= 5, { icon: "🫠", title: "Ters Rüzgar", desc: "Şans biraz tripte", tone: "bg-pink-100 text-pink-800 border-pink-200" });
+  add(correct >= 1, { icon: "🌱", title: "İlk Doğru", desc: "Kahvaltı yolculuğu başladı", tone: "bg-green-100 text-green-800 border-green-200" });
+  add(correct >= 10, { icon: "📈", title: "10 Doğru Kulübü", desc: `${correct} doğru tahmin`, tone: "bg-lime-100 text-lime-800 border-lime-200" });
+  add(correct >= 25, { icon: "🏹", title: "25 İsabet", desc: "Tahmin eli ısındı", tone: "bg-teal-100 text-teal-800 border-teal-200" });
+  add(correct >= 50, { icon: "💎", title: "50 Doğru Elmas", desc: "Yarı dalya", tone: "bg-cyan-100 text-cyan-800 border-cyan-200" });
+  add(correct >= 100, { icon: "👑", title: "100 Doğru Efsanesi", desc: "Ofis tarihine geçti", tone: "bg-amber-100 text-amber-800 border-amber-200" });
+  add(wrong >= 10, { icon: "🎢", title: "Risk Seven", desc: `${wrong} yanlış ama hâlâ oyunda`, tone: "bg-orange-100 text-orange-800 border-orange-200" });
+  add(wrong >= correct && answered >= 10, { icon: "🎲", title: "Kaderci", desc: "Riskli tahminler fazla", tone: "bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200" });
+  add(bonus >= 10, { icon: "💰", title: "Bonus Avcısı", desc: `+${bonus} ek puan`, tone: "bg-emerald-100 text-emerald-800 border-emerald-200" });
+  add(bonus >= 50, { icon: "🤑", title: "Bonus Zengini", desc: `+${bonus} bonus`, tone: "bg-green-100 text-green-800 border-green-200" });
+  add(blanks >= 1, { icon: "🤐", title: "Sessiz Tahminci", desc: `${blanks} bilinçli boş`, tone: "bg-slate-100 text-slate-700 border-slate-200" });
+  add(blanks >= 5, { icon: "🧊", title: "Soğukkanlı", desc: "Bilmediğini boş bırakıyor", tone: "bg-slate-100 text-slate-700 border-slate-200" });
+  add(force >= 1, { icon: "🧾", title: "Mücbir Ustası", desc: `${force} mücbir sebep`, tone: "bg-zinc-100 text-zinc-700 border-zinc-200" });
+  add(herdTotal >= 3 && herdPct >= 80, { icon: "🐑", title: "Sürüyle Giden", desc: `%${herdPct} çoğunlukla aynı`, tone: "bg-stone-100 text-stone-700 border-stone-200" });
+  add(herdTotal >= 3 && herdPct <= 35, { icon: "⚡", title: "Aykırı Tahminci", desc: `%${herdPct} çoğunlukla aynı`, tone: "bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200" });
+  add(soloCorrect >= 1, { icon: "💥", title: "Tek Başına Bildi", desc: `${soloCorrect} sürpriz isabet`, tone: "bg-red-100 text-red-800 border-red-200" });
+  add(exactUnderdog >= 2, { icon: "🦊", title: "Sürpriz Tilkisi", desc: `${exactUnderdog} aykırı doğru`, tone: "bg-orange-100 text-orange-800 border-orange-200" });
+  add(homePicks >= 5 && homePicks === favoritePick, { icon: "🏠", title: "Evci", desc: `En çok ${favoritePickLabel} oynuyor`, tone: "bg-amber-100 text-amber-800 border-amber-200" });
+  add(drawPicks >= 3 && drawPicks === favoritePick, { icon: "🤝", title: "Beraberlikçi", desc: "X kokusunu seviyor", tone: "bg-violet-100 text-violet-800 border-violet-200" });
+  add(awayPicks >= 5 && awayPicks === favoritePick, { icon: "🚌", title: "Deplasman Sevdalısı", desc: `En çok ${favoritePickLabel} oynuyor`, tone: "bg-sky-100 text-sky-800 border-sky-200" });
+  add(jokerPreds.length >= 1, { icon: "🃏", title: "Joker Açtı", desc: `${jokerPreds.length} joker kullanımı`, tone: "bg-purple-100 text-purple-800 border-purple-200" });
+  add(jokerCorrect >= 1, { icon: "🃏", title: "Joker Vurdu", desc: `${jokerCorrect} joker doğru`, tone: "bg-purple-100 text-purple-800 border-purple-200" });
+  add(jokerWrong >= 1, { icon: "🫣", title: "Joker Yaktı", desc: `${jokerWrong} joker yanlış`, tone: "bg-rose-100 text-rose-700 border-rose-200" });
+  add(jokerCorrect >= 3, { icon: "🪄", title: "Joker Büyücüsü", desc: "Jokerleri nokta atışı", tone: "bg-indigo-100 text-indigo-800 border-indigo-200" });
+  add(player.champion_team === "Türkiye", { icon: "🇹🇷", title: "Ay-Yıldızcı", desc: "Şampiyon Türkiye dedi", tone: "bg-red-100 text-red-800 border-red-200" });
+  add(!!player.champion_team, { icon: "🌍", title: "Şampiyon Seçti", desc: `${player.champion_team} diyor`, tone: "bg-green-100 text-green-800 border-green-200" });
+  add(totalPoints >= 10, { icon: "🚀", title: "Puan Motoru", desc: `${totalPoints} puana ulaştı`, tone: "bg-blue-100 text-blue-800 border-blue-200" });
+  add(totalPoints >= 50, { icon: "🏎️", title: "Hızlı Başlangıç", desc: "50 puan barajı", tone: "bg-red-100 text-red-800 border-red-200" });
+  add(totalPoints >= 100, { icon: "💯", title: "Yüzlük Kulüp", desc: "100 puan barajı", tone: "bg-amber-100 text-amber-800 border-amber-200" });
+  add(totalPredictionPoints < 0 && answered >= 3, { icon: "🕳️", title: "Negatif Tünel", desc: "Skorlar ters gidiyor", tone: "bg-gray-100 text-gray-700 border-gray-200" });
+  add(comebackWins >= 3, { icon: "🦅", title: "Dipten Uçuş", desc: "Simit hattında seri yaptı", tone: "bg-cyan-100 text-cyan-800 border-cyan-200" });
+  add(latePanic >= 1, { icon: "🥶", title: "Son Dakika Panikçisi", desc: `${latePanic} son dakika tahmini`, tone: "bg-blue-100 text-blue-800 border-blue-200" });
+  add(answered >= 1 && homePicks > 0 && drawPicks > 0 && awayPicks > 0, { icon: "🌈", title: "Üç Yolcu", desc: "1, X ve 2 hepsini denedi", tone: "bg-pink-100 text-pink-800 border-pink-200" });
+  add(answered >= 10 && Math.abs(correct - wrong) <= 1, { icon: "⚖️", title: "Denge Ustası", desc: "Doğru/yanlış başa baş", tone: "bg-stone-100 text-stone-700 border-stone-200" });
+
+  // Aynı isim/desc tekrarlarını temizle ve rozet havuzunu 50 ile sınırla.
+  const uniqueBadges = badges.filter((badge, index, arr) => arr.findIndex((b) => b.title === badge.title && b.desc === badge.desc) === index);
+  return uniqueBadges.slice(0, 50);
+}
+
+function BadgePanel({ player, sortedPlayers, playerStreaks, predictions, matches }: {
+  player: Player;
+  sortedPlayers: Player[];
+  playerStreaks: Record<string, number>;
+  predictions: Prediction[];
+  matches: Match[];
+}) {
+  const badges = getPlayerBadges(player, sortedPlayers, playerStreaks, predictions, matches);
+  return (
+    <div className="mb-6 rounded-[1.75rem] border border-amber-100 bg-amber-50/50 p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-xl font-black">🏅 Rozetler</h3>
+        <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-500">{badges.length}/50 rozet</span>
+      </div>
+      {badges.length === 0 ? (
+        <div className="rounded-2xl bg-white p-4 text-sm font-bold text-slate-500">Veri geldikçe rozetler burada açılacak 😄</div>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+          {badges.map((badge) => (
+            <div key={`${badge.title}-${badge.desc}`} className={`rounded-2xl border p-4 ${badge.tone}`}>
+              <div className="text-2xl">{badge.icon}</div>
+              <div className="mt-2 font-black">{badge.title}</div>
+              <div className="mt-1 text-xs font-bold opacity-80">{badge.desc}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function getCompareMetrics(player: Player | undefined, sortedPlayers: Player[], predictions: Prediction[], matches: Match[], playerStreaks: Record<string, number>) {
+  if (!player) return null;
+  const rank = sortedPlayers.findIndex((p) => p.id === player.id) + 1;
+  const finishedPreds = predictions.filter((pred) => {
+    const match = matches.find((m) => m.id === pred.match_id);
+    return pred.player_id === player.id && !!match?.result && pred.prediction !== "YOK";
+  });
+  const lastTen = finishedPreds
+    .map((pred) => ({ pred, match: matches.find((m) => m.id === pred.match_id) }))
+    .filter((x) => x.match)
+    .sort((a, b) => new Date(b.match!.match_time).getTime() - new Date(a.match!.match_time).getTime())
+    .slice(0, 10);
+  const lastTenPoints = lastTen.reduce((sum, x) => sum + Number(x.pred.points || 0), 0);
+  return {
+    player,
+    rank,
+    points: Number(player.total_points || 0),
+    correct: Number(player.correct_count || 0),
+    wrong: Number(player.wrong_count || 0),
+    blank: Number(player.intentional_blank || 0),
+    bonus: Number(player.bonus_points || 0),
+    success: Number(player.success_rate || 0),
+    streak: playerStreaks[player.id] || 0,
+    lastTenPoints,
+    answered: Number(player.correct_count || 0) + Number(player.wrong_count || 0),
+  };
+}
+
+function RivalCompare({ players, sortedPlayers, predictions, matches, playerStreaks, leftId, rightId, setLeftId, setRightId, onProfile }: {
+  players: Player[];
+  sortedPlayers: Player[];
+  predictions: Prediction[];
+  matches: Match[];
+  playerStreaks: Record<string, number>;
+  leftId: string;
+  rightId: string;
+  setLeftId: (id: string) => void;
+  setRightId: (id: string) => void;
+  onProfile: (id: string) => void;
+}) {
+  const fallbackLeft = leftId || sortedPlayers[0]?.id || players[0]?.id || "";
+  const fallbackRight = rightId || sortedPlayers.find((p) => p.id !== fallbackLeft)?.id || players[1]?.id || "";
+  const left = players.find((p) => p.id === fallbackLeft);
+  const right = players.find((p) => p.id === fallbackRight && p.id !== fallbackLeft) || players.find((p) => p.id !== fallbackLeft);
+  const leftMetrics = getCompareMetrics(left, sortedPlayers, predictions, matches, playerStreaks);
+  const rightMetrics = getCompareMetrics(right, sortedPlayers, predictions, matches, playerStreaks);
+
+  const commonMatchIds = new Set<string>();
+  predictions.filter((p) => p.player_id === left?.id && p.prediction !== "YOK").forEach((p) => {
+    const other = predictions.find((x) => x.player_id === right?.id && x.match_id === p.match_id && x.prediction !== "YOK");
+    const match = matches.find((m) => m.id === p.match_id);
+    if (other && match?.result) commonMatchIds.add(p.match_id);
+  });
+  const commonMatches = Array.from(commonMatchIds);
+  const samePicks = commonMatches.filter((matchId) => {
+    const a = predictions.find((p) => p.player_id === left?.id && p.match_id === matchId);
+    const b = predictions.find((p) => p.player_id === right?.id && p.match_id === matchId);
+    return a?.prediction === b?.prediction;
+  }).length;
+  const differentPicks = commonMatches.length - samePicks;
+  const leftCommonPoints = commonMatches.reduce((sum, matchId) => sum + Number(predictions.find((p) => p.player_id === left?.id && p.match_id === matchId)?.points || 0), 0);
+  const rightCommonPoints = commonMatches.reduce((sum, matchId) => sum + Number(predictions.find((p) => p.player_id === right?.id && p.match_id === matchId)?.points || 0), 0);
+
+  const pointDiff = Number(leftMetrics?.points || 0) - Number(rightMetrics?.points || 0);
+  const leaderName = pointDiff === 0 ? "Berabere" : pointDiff > 0 ? left?.name : right?.name;
+  const gap = Math.abs(pointDiff);
+
+  return (
+    <div>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-black">🥊 Rakip Karşılaştırma</h2>
+          <p className="mt-1 text-sm font-bold text-slate-500">İki oyuncuyu seç, kim kimi kahvaltı hattına yaklaştırıyor görelim 😄</p>
+        </div>
+      </div>
+
+      <div className="mb-6 grid gap-3 md:grid-cols-[1fr_auto_1fr] md:items-end">
+        <div>
+          <label className="mb-2 block text-sm font-black text-slate-500">1. Oyuncu</label>
+          <select value={fallbackLeft} onChange={(e) => setLeftId(e.target.value)} className="w-full rounded-2xl border border-amber-100 bg-amber-50/40 p-3 font-black">
+            {players.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+        <div className="rounded-full bg-red-500 px-4 py-3 text-center font-black text-white">VS</div>
+        <div>
+          <label className="mb-2 block text-sm font-black text-slate-500">2. Oyuncu</label>
+          <select value={right?.id || ""} onChange={(e) => setRightId(e.target.value)} className="w-full rounded-2xl border border-amber-100 bg-amber-50/40 p-3 font-black">
+            {players.filter((p) => p.id !== fallbackLeft).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {leftMetrics && rightMetrics && (
+        <>
+          <div className="mb-6 rounded-[1.75rem] border border-amber-100 bg-amber-50/50 p-5 text-center">
+            <div className="text-sm font-black uppercase tracking-wide text-slate-500">Genel fark</div>
+            <div className="mt-2 text-3xl font-black text-slate-950">
+              {leaderName === "Berabere" ? "Şu an kafa kafaya ⚖️" : `${leaderName} ${gap} puan önde`}
+            </div>
+            <div className="mt-2 text-sm font-bold text-slate-500">
+              Ortak sonuçlanmış maçlarda: {left?.name} {leftCommonPoints} / {right?.name} {rightCommonPoints}
+            </div>
+          </div>
+
+          <div className="mb-6 grid gap-4 md:grid-cols-2">
+            <ComparePlayerCard metrics={leftMetrics} onProfile={onProfile} />
+            <ComparePlayerCard metrics={rightMetrics} onProfile={onProfile} />
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-4">
+            <StatBox title="ORTAK MAÇ" value={commonMatches.length} />
+            <StatBox title="AYNI TAHMİN" value={samePicks} />
+            <StatBox title="ZIT TAHMİN" value={differentPicks} />
+            <StatBox title="PUAN FARKI" value={gap} />
+          </div>
+
+          <div className="mt-6 rounded-[1.75rem] border border-red-100 bg-red-50 p-5">
+            <h3 className="mb-2 text-lg font-black">🧂 Ofis Yorumu</h3>
+            <p className="font-bold text-slate-700">
+              {leaderName === "Berabere"
+                ? "Bu ikili tam dengede. Bir sonraki maç kahvaltı kaderini değiştirebilir."
+                : `${leaderName} şu an önde ama Dünya Kupası uzun maraton; tek kötü gün simit hattına indirir 😄`}
+            </p>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ComparePlayerCard({ metrics, onProfile }: { metrics: NonNullable<ReturnType<typeof getCompareMetrics>>; onProfile: (id: string) => void }) {
+  const p = metrics.player;
+  return (
+    <div className="rounded-[1.75rem] border border-amber-100 bg-white p-5 shadow-lg shadow-amber-100/50">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <div className="text-2xl font-black">{p.name}</div>
+          <div className="text-sm font-bold text-slate-500">#{metrics.rank} sıra • %{metrics.success} başarı</div>
+        </div>
+        <button onClick={() => onProfile(p.id)} className="rounded-full bg-amber-100 px-3 py-1.5 text-xs font-black text-amber-800 hover:bg-amber-200">Profile git</button>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <StatBox title="PUAN" value={metrics.points} />
+        <StatBox title="SON 10 PUAN" value={metrics.lastTenPoints} />
+        <StatBox title="DOĞRU" value={metrics.correct} />
+        <StatBox title="YANLIŞ" value={metrics.wrong} />
+        <StatBox title="STREAK" value={metrics.streak >= 5 ? `🔥 ${metrics.streak}` : metrics.streak} />
+        <StatBox title="EK PUAN" value={metrics.bonus} />
+      </div>
+    </div>
+  );
+}
+
 function MobileBottomNav({ activeTab, setActiveTab, isAdmin }: { activeTab: string; setActiveTab: (tab: string) => void; isAdmin: boolean }) {
   const items = [
     { key: "dashboard", label: "Ana", icon: "🏠" },
     { key: "tahmin", label: "Tahmin", icon: "🎯" },
     { key: "maclar", label: "Maçlar", icon: "⚽" },
     { key: "profil", label: "Profil", icon: "👤" },
+    { key: "karsilastir", label: "Rakip", icon: "🥊" },
     ...(isAdmin ? [{ key: "admin", label: "Admin", icon: "👑" }] : []),
   ];
   return (
