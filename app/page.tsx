@@ -651,8 +651,6 @@ export default function Home() {
   const matchListMatches = useMemo(() => applyTimeFilter(filteredMatches, matchListFilter), [filteredMatches, matchListFilter]);
   const openMatchesCount = useMemo(() => applyTimeFilter(filteredMatches, "Açık").length, [filteredMatches]);
 
-  const sortedPlayers = useMemo(() => [...players].sort((a, b) => Number(b.total_points || 0) - Number(a.total_points || 0)), [players]);
-
   const playerStreaks = useMemo(() => {
     const streaks: Record<string, number> = {};
     players.forEach((player) => {
@@ -674,6 +672,50 @@ export default function Home() {
     });
     return streaks;
   }, [players, predictions, matches]);
+
+  const jokerScores = useMemo(() => {
+    const scores: Record<string, number> = {};
+    players.forEach((player) => {
+      const jokerPreds = predictions.filter((pred) => pred.player_id === player.id && pred.is_joker);
+      const jokerCorrect = jokerPreds.filter((pred) => {
+        const match = matches.find((m) => m.id === pred.match_id);
+        return !!match?.result && pred.prediction === match.result;
+      }).length;
+      const jokerWrong = jokerPreds.filter((pred) => {
+        const match = matches.find((m) => m.id === pred.match_id);
+        return !!match?.result && pred.prediction !== match.result && pred.prediction !== "YOK";
+      }).length;
+      scores[player.id] = jokerCorrect * 2 - jokerWrong;
+    });
+    return scores;
+  }, [players, predictions, matches]);
+
+  const sortedPlayers = useMemo(() => {
+    return [...players].sort((a, b) => {
+      const pointsDiff = Number(b.total_points || 0) - Number(a.total_points || 0);
+      if (pointsDiff !== 0) return pointsDiff;
+
+      const successDiff = Number(b.success_rate || 0) - Number(a.success_rate || 0);
+      if (successDiff !== 0) return successDiff;
+
+      const correctDiff = Number(b.correct_count || 0) - Number(a.correct_count || 0);
+      if (correctDiff !== 0) return correctDiff;
+
+      const wrongDiff = Number(a.wrong_count || 0) - Number(b.wrong_count || 0);
+      if (wrongDiff !== 0) return wrongDiff;
+
+      const blankDiff = Number(a.intentional_blank || 0) - Number(b.intentional_blank || 0);
+      if (blankDiff !== 0) return blankDiff;
+
+      const streakDiff = Number(playerStreaks[b.id] || 0) - Number(playerStreaks[a.id] || 0);
+      if (streakDiff !== 0) return streakDiff;
+
+      const jokerDiff = Number(jokerScores[b.id] || 0) - Number(jokerScores[a.id] || 0);
+      if (jokerDiff !== 0) return jokerDiff;
+
+      return a.name.localeCompare(b.name, "tr");
+    });
+  }, [players, playerStreaks, jokerScores]);
 
   const getPointsByPlayer = (matchList: Match[], ascending = false) => {
     const data = players.map((player) => {
@@ -1738,6 +1780,31 @@ function getPlayerBadges(
   add(rank <= Math.ceil(totalPlayers / 2), { icon: "🛡️", title: "Üst Blok", desc: "Tablonun güvenli tarafında", tone: "bg-blue-100 text-blue-800 border-blue-200" });
   add(bottomTwo, { icon: "🥯", title: "Simit Hattı", desc: "Kahvaltı baskısı yüksek", tone: "bg-red-100 text-red-700 border-red-200" });
   add(rank === totalPlayers, { icon: "🧯", title: "Acil Toparlanma", desc: "Son sıradan çıkış operasyonu", tone: "bg-rose-100 text-rose-700 border-rose-200" });
+  add(rank === totalPlayers, { icon: "🪦", title: "Kupon Yattı FC", desc: "Sıralama tablosu başsağlığı diliyor", tone: "bg-zinc-100 text-zinc-700 border-zinc-200" });
+  add(bottomTwo, { icon: "🧃", title: "Çayını Al Gel", desc: "Simit hattına servis yaklaştı", tone: "bg-orange-100 text-orange-800 border-orange-200" });
+  add(bottomTwo && wrong > correct, { icon: "🚑", title: "Acil Müdahale", desc: "Tahminlere pansuman gerekebilir", tone: "bg-red-100 text-red-800 border-red-200" });
+  add(rank === 1 && success < 50 && answered >= 5, { icon: "🍀", title: "Şans Balı", desc: "Lider ama futbol tanrıları da yardım etmiş", tone: "bg-lime-100 text-lime-800 border-lime-200" });
+  add(rank <= 3 && wrong > correct && answered >= 10, { icon: "🎭", title: "Drama Podyumu", desc: "Yanlışlar çok ama sahne hâlâ onun", tone: "bg-pink-100 text-pink-800 border-pink-200" });
+  add(wrong >= 5 && wrong > correct + 3, { icon: "📉", title: "Grafik Ağlıyor", desc: "Sonuçlar tabloyu biraz üzmüş", tone: "bg-rose-100 text-rose-700 border-rose-200" });
+  add(wrong >= 10 && success < 45, { icon: "🫠", title: "Ben Bu Ligi Bırakıyorum", desc: "Ama yarın yine tahmin yapacak", tone: "bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200" });
+  add(streak >= 1 && wrong >= correct && answered >= 8, { icon: "🧿", title: "Nazar Değmesin", desc: "Seri var ama geçmiş biraz olaylı", tone: "bg-blue-100 text-blue-800 border-blue-200" });
+  add(streak === 0 && wrong >= 3, { icon: "🧯", title: "Yangın Tüpü Lazım", desc: "Seri yok, duman var", tone: "bg-red-100 text-red-700 border-red-200" });
+  add(blanks >= 3, { icon: "🙈", title: "Görmedim Duymadım", desc: "Zor maçları usulca pas geçmiş", tone: "bg-slate-100 text-slate-700 border-slate-200" });
+  add(force >= 3, { icon: "📋", title: "Mazeret Dosyası", desc: "Mücbir klasörü kabarmış", tone: "bg-zinc-100 text-zinc-700 border-zinc-200" });
+  add(jokerWrong >= 1, { icon: "🤡", title: "Kendine Güveniyordu", desc: "Joker bastı, kader güldü", tone: "bg-pink-100 text-pink-800 border-pink-200" });
+  add(jokerWrong >= 2, { icon: "🪦", title: "Joker Mezarlığı", desc: "Jokerler sessizce toprağa verildi", tone: "bg-zinc-100 text-zinc-700 border-zinc-200" });
+  add(jokerCorrect >= 1 && jokerWrong === 0, { icon: "😎", title: "Joker Artistliği", desc: "Bastı ve yürüdü", tone: "bg-indigo-100 text-indigo-800 border-indigo-200" });
+  add(herdTotal >= 3 && herdPct >= 90, { icon: "🐑", title: "Sürü Psikolojisi Profesörü", desc: "Ofis nereye, o oraya", tone: "bg-stone-100 text-stone-700 border-stone-200" });
+  add(herdTotal >= 3 && herdPct <= 25, { icon: "🧨", title: "Ters Köşe Sevdalısı", desc: "Kalabalığa alerjisi var", tone: "bg-red-100 text-red-800 border-red-200" });
+  add(soloCorrect >= 1, { icon: "🧙‍♀️", title: "İçime Doğdu Kahini", desc: "Kimse inanmadı, o bildi", tone: "bg-purple-100 text-purple-800 border-purple-200" });
+  add(latePanic >= 2, { icon: "🥶", title: "Panik Butonu", desc: "Tahminleri son dakika kurtarıyor", tone: "bg-sky-100 text-sky-800 border-sky-200" });
+  add(answered >= 8 && wrong === 0, { icon: "🧊", title: "Buz Gibi Oynuyor", desc: "Yanlışsız sakinlik", tone: "bg-cyan-100 text-cyan-800 border-cyan-200" });
+  add(correct >= 3 && success >= 80 && answered >= 5, { icon: "👀", title: "Sessiz Tehlike", desc: "Az konuşur, puanı alır", tone: "bg-emerald-100 text-emerald-800 border-emerald-200" });
+  add(answered >= 10 && Math.abs(correct - wrong) <= 1, { icon: "🎪", title: "Sirk Gibi Sezon", desc: "Bir doğru bir yanlış, tempo şahane", tone: "bg-amber-100 text-amber-800 border-amber-200" });
+  add(drawPicks >= 5 && drawPicks === favoritePick, { icon: "🛌", title: "Berabere Yatıyor", desc: "X onun konfor alanı", tone: "bg-violet-100 text-violet-800 border-violet-200" });
+  add(homePicks >= 8 && homePicks === favoritePick, { icon: "🏡", title: "Evden Çıkmıyor", desc: "Ev sahibine güven tam", tone: "bg-amber-100 text-amber-800 border-amber-200" });
+  add(awayPicks >= 8 && awayPicks === favoritePick, { icon: "🧳", title: "Deplasman Turisti", desc: "Dış saha seviyor", tone: "bg-blue-100 text-blue-800 border-blue-200" });
+  add(totalPoints < 0 && answered >= 3, { icon: "🕳️", title: "Puan Kara Deliği", desc: "Puanlar başka evrene kaçıyor", tone: "bg-gray-100 text-gray-700 border-gray-200" });
   add(leaderGap > 0 && leaderGap <= 5, { icon: "👀", title: "Lidere Nefes", desc: `${leaderGap} puan fark kaldı`, tone: "bg-indigo-100 text-indigo-800 border-indigo-200" });
   add(leaderGap >= 25, { icon: "🧗", title: "Dağ Tırmanışı", desc: `${leaderGap} puanlık kapanacak fark`, tone: "bg-stone-100 text-stone-700 border-stone-200" });
   add(bestSuccessId === player.id, { icon: "🧙", title: "Baş Kahin", desc: "En yüksek başarı oranı", tone: "bg-purple-100 text-purple-800 border-purple-200" });
@@ -1784,9 +1851,35 @@ function getPlayerBadges(
   add(answered >= 1 && homePicks > 0 && drawPicks > 0 && awayPicks > 0, { icon: "🌈", title: "Üç Yolcu", desc: "1, X ve 2 hepsini denedi", tone: "bg-pink-100 text-pink-800 border-pink-200" });
   add(answered >= 10 && Math.abs(correct - wrong) <= 1, { icon: "⚖️", title: "Denge Ustası", desc: "Doğru/yanlış başa baş", tone: "bg-stone-100 text-stone-700 border-stone-200" });
 
-  // Aynı isim/desc tekrarlarını temizle ve rozet havuzunu 50 ile sınırla.
+
+  // 100 rozet paketi için ekstra komik/stratejik rozetler
+  add(answered >= 20 && success >= 55, { icon: "🧠", title: "Futbol IQ Açık", desc: "20+ tahminde sağlam oran", tone: "bg-indigo-100 text-indigo-800 border-indigo-200" });
+  add(answered >= 20 && success < 45, { icon: "📺", title: "Maçı Tersten İzliyor", desc: "Ekranı çevirmek fayda edebilir", tone: "bg-rose-100 text-rose-700 border-rose-200" });
+  add(correct >= wrong + 5 && answered >= 10, { icon: "🦾", title: "Makine Gibi", desc: "Doğrular farkı açmış", tone: "bg-cyan-100 text-cyan-800 border-cyan-200" });
+  add(wrong >= correct + 5 && answered >= 10, { icon: "🧨", title: "Risk Patladı", desc: "Cesaret var, sonuçlar nazlı", tone: "bg-red-100 text-red-800 border-red-200" });
+  add(jokerPreds.length >= 2 && jokerCorrect === jokerPreds.length && jokerPreds.length > 0, { icon: "🎩", title: "Joker Şapkadan Çıktı", desc: "Kullandığı jokerler tertemiz", tone: "bg-purple-100 text-purple-800 border-purple-200" });
+  add(jokerPreds.length >= 2 && jokerWrong === jokerPreds.length && jokerPreds.length > 0, { icon: "🪦", title: "Joker Mezarlığı", desc: "Jokerler sessizce gömüldü", tone: "bg-zinc-100 text-zinc-700 border-zinc-200" });
+  add(rank === 1 && streak >= 3, { icon: "🦁", title: "Lider ve Formda", desc: "Hem zirvede hem seride", tone: "bg-yellow-100 text-yellow-800 border-yellow-200" });
+  add(bottomTwo && streak >= 2, { icon: "🐣", title: "Simitten Kaçış Planı", desc: "Alt sıradan seriyle çıkmaya çalışıyor", tone: "bg-orange-100 text-orange-800 border-orange-200" });
+  add(leaderGap > 0 && leaderGap <= 2, { icon: "🫁", title: "Ense Nefesi", desc: "Liderin ensesinde sıcak nefes", tone: "bg-pink-100 text-pink-800 border-pink-200" });
+  add(leaderGap >= 50, { icon: "🗺️", title: "Harita Lazım", desc: "Lidere giden yol biraz uzun", tone: "bg-stone-100 text-stone-700 border-stone-200" });
+  add(drawPicks >= homePicks && drawPicks >= awayPicks && drawPicks >= 10, { icon: "🧘", title: "X Zen Ustası", desc: "Beraberlikte huzur buluyor", tone: "bg-violet-100 text-violet-800 border-violet-200" });
+  add(homePicks >= awayPicks * 2 && homePicks >= 10, { icon: "🏟️", title: "Ev Sahibi Lobisi", desc: "Tribün etkisine inanıyor", tone: "bg-amber-100 text-amber-800 border-amber-200" });
+  add(awayPicks >= homePicks * 2 && awayPicks >= 10, { icon: "✈️", title: "Deplasman Uçağı", desc: "Dış saha romantizmi", tone: "bg-sky-100 text-sky-800 border-sky-200" });
+  add(herdTotal >= 5 && herdPct === 100, { icon: "🐑", title: "Sürü Kaptanı", desc: "Çoğunlukla tam uyum", tone: "bg-stone-100 text-stone-700 border-stone-200" });
+  add(herdTotal >= 5 && herdPct <= 20, { icon: "🧬", title: "Genetik Aykırı", desc: "Ofis başka o başka", tone: "bg-fuchsia-100 text-fuchsia-800 border-fuchsia-200" });
+  add(soloCorrect >= 2, { icon: "🧨", title: "Ofisi Susturan", desc: "Tek başına doğru bildi", tone: "bg-red-100 text-red-800 border-red-200" });
+  add(exactUnderdog >= 3, { icon: "🕵️", title: "Sürpriz Dedektifi", desc: "Ters köşeleri kokluyor", tone: "bg-orange-100 text-orange-800 border-orange-200" });
+  add(latePanic >= 3, { icon: "⏰", title: "Deadline Kahini", desc: "Son dakika onun uzmanlığı", tone: "bg-blue-100 text-blue-800 border-blue-200" });
+  add(blanks === 0 && answered >= 10, { icon: "🫡", title: "Pas Geçmeyen", desc: "Her maça fikri var", tone: "bg-green-100 text-green-800 border-green-200" });
+  add(blanks >= 10, { icon: "🛡️", title: "Seçici Kurul", desc: "Her maça bulaşmıyor", tone: "bg-slate-100 text-slate-700 border-slate-200" });
+  add(bonus >= 100, { icon: "🏦", title: "Bonus Bankası", desc: "Ek puan kasası dolu", tone: "bg-emerald-100 text-emerald-800 border-emerald-200" });
+  add(totalPoints >= 250, { icon: "🚂", title: "Puan Lokomotifi", desc: "250 puan barajı geçildi", tone: "bg-blue-100 text-blue-800 border-blue-200" });
+  add(totalPoints >= 500, { icon: "🏰", title: "Puan Krallığı", desc: "500 puanlık saltanat", tone: "bg-amber-100 text-amber-800 border-amber-200" });
+
+  // Aynı isim/desc tekrarlarını temizle ve rozet havuzunu 100 ile sınırla.
   const uniqueBadges = badges.filter((badge, index, arr) => arr.findIndex((b) => b.title === badge.title && b.desc === badge.desc) === index);
-  return uniqueBadges.slice(0, 50);
+  return uniqueBadges.slice(0, 100);
 }
 
 function BadgePanel({ player, sortedPlayers, playerStreaks, predictions, matches }: {
@@ -1801,7 +1894,7 @@ function BadgePanel({ player, sortedPlayers, playerStreaks, predictions, matches
     <div className="mb-6 rounded-[1.75rem] border border-amber-100 bg-amber-50/50 p-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-xl font-black">🏅 Rozetler</h3>
-        <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-500">{badges.length}/50 rozet</span>
+        <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-500">{badges.length}/100 rozet</span>
       </div>
       {badges.length === 0 ? (
         <div className="rounded-2xl bg-white p-4 text-sm font-bold text-slate-500">Veri geldikçe rozetler burada açılacak 😄</div>
