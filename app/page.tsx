@@ -538,6 +538,8 @@ export default function Home() {
   const [selectedStage, setSelectedStage] = useState("Tümü");
   const [predictionFilter, setPredictionFilter] = useState("Açık");
   const [matchListFilter, setMatchListFilter] = useState("Tümü");
+  const [adminScoreSearch, setAdminScoreSearch] = useState("");
+  const [adminScoreFilter, setAdminScoreFilter] = useState("Skor Bekleyenler");
 
   const [profilePlayerId, setProfilePlayerId] = useState("");
   const [compareLeftId, setCompareLeftId] = useState("");
@@ -685,6 +687,36 @@ export default function Home() {
 
   const predictionMatches = useMemo(() => applyTimeFilter(filteredMatches, predictionFilter), [filteredMatches, predictionFilter]);
   const matchListMatches = useMemo(() => applyTimeFilter(filteredMatches, matchListFilter), [filteredMatches, matchListFilter]);
+  const adminScoreMatches = useMemo(() => {
+    const now = Date.now();
+    const q = adminScoreSearch.trim().toLocaleLowerCase("tr-TR");
+
+    let list = filteredMatches;
+
+    if (adminScoreFilter === "Skor Bekleyenler") {
+      list = list.filter((match) => !match.result && new Date(match.match_time).getTime() <= now);
+    } else if (adminScoreFilter === "Sonuçlananlar") {
+      list = list.filter((match) => !!match.result);
+    } else {
+      list = applyTimeFilter(list, adminScoreFilter);
+    }
+
+    if (!q) return list;
+
+    return list.filter((match) => {
+      const haystack = [
+        match.home_team,
+        match.away_team,
+        match.league || "",
+        match.breakfast_round || "",
+        String(match.week_no || ""),
+      ]
+        .join(" ")
+        .toLocaleLowerCase("tr-TR");
+
+      return haystack.includes(q);
+    });
+  }, [filteredMatches, adminScoreFilter, adminScoreSearch]);
   const openMatchesCount = useMemo(() => applyTimeFilter(filteredMatches, "Açık").length, [filteredMatches]);
 
   const playerStreaks = useMemo(() => {
@@ -937,11 +969,27 @@ export default function Home() {
   };
 
   const addMissingNoPredictionsForMatch = async (match: Match) => {
-    for (const player of players) {
-      const exists = predictions.some((p) => p.player_id === player.id && p.match_id === match.id);
+    const { data: latestPlayers } = await supabase.from("players").select("*");
+    const { data: latestPredictions } = await supabase
+      .from("predictions")
+      .select("*")
+      .eq("match_id", match.id);
+
+    const playerList = latestPlayers || [];
+    const predictionList = latestPredictions || [];
+
+    for (const player of playerList) {
+      const exists = predictionList.some(
+        (p) => p.player_id === player.id && p.match_id === match.id
+      );
+
       if (!exists) {
         await supabase.from("predictions").insert({
-          player_id: player.id, match_id: match.id, prediction: "YOK", points: -3, is_joker: false,
+          player_id: player.id,
+          match_id: match.id,
+          prediction: "YOK",
+          points: -3,
+          is_joker: false,
         });
       }
     }
@@ -965,6 +1013,7 @@ export default function Home() {
 
     await recalculateAllScores();
     await loadData();
+    alert("Skor ve puanlar güncellendi ✅");
   };
 
   const submitScore = async (match: Match) => {
@@ -1068,8 +1117,8 @@ export default function Home() {
   }
 
   const tabs = currentPlayer.is_admin
-    ? ["dashboard", "tahmin", "maclar", "profil", "karsilastir", "admin"]
-    : ["dashboard", "tahmin", "maclar", "profil", "karsilastir"];
+    ? ["dashboard", "tahmin", "maclar", "profil", "karsilastir", "kurallar", "admin"]
+    : ["dashboard", "tahmin", "maclar", "profil", "karsilastir", "kurallar"];
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#FFF7E8] text-slate-900">
@@ -1121,6 +1170,7 @@ export default function Home() {
                 {tab === "maclar" && "Maçlar"}
                 {tab === "profil" && "Profil"}
                 {tab === "karsilastir" && "Karşılaştır"}
+                {tab === "kurallar" && "Kurallar"}
                 {tab === "admin" && "Admin"}
               </button>
             ))}
@@ -1430,6 +1480,14 @@ export default function Home() {
           </section>
         )}
 
+        {/* KURALLAR */}
+        {activeTab === "kurallar" && (
+          <section className="rounded-[1.75rem] border-4 border-red-50 bg-white p-4 shadow-2xl shadow-red-100/70 md:rounded-[2rem] md:p-6">
+            <RulesPage />
+          </section>
+        )}
+
+
         {/* ADMIN */}
         {activeTab === "admin" && currentPlayer.is_admin && (
           <section className="rounded-[1.75rem] border-4 border-red-50 bg-white p-4 shadow-2xl shadow-red-100/70 md:rounded-[2rem] md:p-6">
@@ -1474,10 +1532,46 @@ export default function Home() {
                   <button onClick={addMatch} className="rounded-2xl bg-slate-950 font-black text-white">Maç Ekle</button>
                 </div>
 
-                <FilterButtons value={matchListFilter} onChange={setMatchListFilter} />
+                <div className="mb-5 rounded-[1.75rem] border border-amber-100 bg-white p-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                    <h3 className="text-lg font-black">🔎 Skor Giriş Filtresi</h3>
+                    <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-700">
+                      {adminScoreMatches.length} maç gösteriliyor
+                    </span>
+                  </div>
+
+                  <input
+                    value={adminScoreSearch}
+                    onChange={(e) => setAdminScoreSearch(e.target.value)}
+                    placeholder="Takım / aşama ara: İran, Yeni Zelanda, Final..."
+                    className="mb-3 w-full rounded-2xl border border-amber-100 bg-amber-50/40 p-3 font-bold outline-none focus:border-amber-300"
+                  />
+
+                  <div className="flex flex-wrap gap-2">
+                    {["Skor Bekleyenler", "Bugün", "Yarın", "Açık", "Sonuçlananlar", "Tümü"].map((filter) => (
+                      <button
+                        key={filter}
+                        onClick={() => setAdminScoreFilter(filter)}
+                        className={`rounded-full px-4 py-2 text-sm font-black transition ${
+                          adminScoreFilter === filter
+                            ? "bg-slate-950 text-white"
+                            : "bg-amber-50 text-slate-700 hover:bg-amber-100"
+                        }`}
+                      >
+                        {filter === "Skor Bekleyenler" ? "🔴 Skor Bekleyenler" : filter}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
                 <div className="space-y-3">
-                  {matchListMatches.map((match) => {
+                  {adminScoreMatches.length === 0 && (
+                    <div className="rounded-2xl border border-amber-100 bg-amber-50 p-5 font-bold text-slate-500">
+                      Bu arama/filtreye uygun maç yok 😄
+                    </div>
+                  )}
+
+                  {adminScoreMatches.map((match) => {
                     const status = getMatchStatus(match);
                     return (
                       <div key={match.id} className={`rounded-2xl border bg-amber-50/40 p-4 ${status.borderColor}`}>
@@ -2137,6 +2231,110 @@ function ComparePlayerCard({ metrics, onProfile }: { metrics: NonNullable<Return
   );
 }
 
+
+function RuleCard({ icon, title, children }: { icon: string; title: string; children: any }) {
+  return (
+    <div className="rounded-[1.5rem] border border-amber-100 bg-amber-50/60 p-4 shadow-sm">
+      <div className="mb-2 flex items-center gap-2 text-lg font-black">
+        <span className="text-2xl">{icon}</span>
+        <span>{title}</span>
+      </div>
+      <div className="text-sm font-bold leading-6 text-slate-600">{children}</div>
+    </div>
+  );
+}
+
+function RulesPage() {
+  const scoreRules = [
+    { label: "Doğru tahmin", value: "+3", tone: "bg-emerald-100 text-emerald-700" },
+    { label: "Yanlış tahmin", value: "-1", tone: "bg-red-100 text-red-700" },
+    { label: "Tahmin yok", value: "-3", tone: "bg-slate-100 text-slate-700" },
+    { label: "Joker doğru", value: "+6", tone: "bg-amber-100 text-amber-700" },
+    { label: "Joker yanlış", value: "-2", tone: "bg-orange-100 text-orange-700" },
+  ];
+
+  const tiebreakers = [
+    "Toplam puan",
+    "Başarı yüzdesi",
+    "Doğru tahmin sayısı",
+    "Daha az yanlış tahmin",
+    "Daha az tahmin yok",
+    "Streak / doğru tahmin serisi",
+    "Joker performansı",
+    "Alfabetik sıra",
+  ];
+
+  return (
+    <div>
+      <div className="mb-6 overflow-hidden rounded-[2rem] bg-gradient-to-br from-red-500 to-amber-400 p-5 text-white shadow-2xl shadow-red-100 md:p-7">
+        <div className="text-sm font-black uppercase tracking-wider text-white/80">ORS Kahvaltı Ligi</div>
+        <h2 className="mt-1 text-3xl font-black md:text-4xl">📜 Oyun Kuralları</h2>
+        <p className="mt-2 max-w-3xl font-bold text-white/90">
+          Tahmin yap, puan kazan, jokeri doğru yerde kullan ve kahvaltı hattından uzak dur. Kurallar burada, bahaneler dışarıda 😄🥯
+        </p>
+      </div>
+
+      <div className="mb-6 grid gap-3 md:grid-cols-5">
+        {scoreRules.map((rule) => (
+          <div key={rule.label} className="rounded-[1.25rem] border border-slate-100 bg-white p-4 text-center shadow-sm">
+            <div className={`mx-auto mb-2 inline-flex rounded-full px-4 py-2 text-xl font-black ${rule.tone}`}>{rule.value}</div>
+            <div className="text-sm font-black text-slate-600">{rule.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <RuleCard icon="🎯" title="Tahmin Mantığı">
+          Grup maçlarında 1 / X / 2 seçeneği vardır. Grup aşamasından sonra beraberlik seçeneği kalkar; eleme maçlarında sadece 1 veya 2 seçilir.
+        </RuleCard>
+
+        <RuleCard icon="🃏" title="Joker Hakkı">
+          Her aşamada 1 joker hakkı vardır. Jokerli tahmin doğru çıkarsa +6, yanlış çıkarsa -2 puan yazılır. Joker strateji işidir; gönlünün değil, aklının sesini dinle 😄
+        </RuleCard>
+
+        <RuleCard icon="🥯" title="Kahvaltı Hattı">
+          Kahvaltı hattı genel toplam puanda en düşük puana sahip oyunculara göre belirlenir. Normalde son 2 kişi hatta girer; 2. sonuncuyla aynı puanda olan başka oyuncular varsa onlar da hatta dahil olur.
+        </RuleCard>
+
+        <RuleCard icon="🌅" title="Bugün / Yarın Filtresi">
+          Maç günü gece 00:00’da değil, sabah 06:00’da değişir. Yani gece 02:00 ve 04:00 maçları hâlâ önceki akşamın maçları gibi Bugün filtresinde görünür.
+        </RuleCard>
+
+        <RuleCard icon="🔥" title="Streak / Seri">
+          Streak, üst üste doğru bilinen maç serisidir. Eşit puanda 6. kırılım olarak devreye girer; yani formda olan oyuncuya küçük bir avantaj sağlar.
+        </RuleCard>
+
+        <RuleCard icon="🏅" title="Rozetler">
+          Profilde performansa göre başarı, joker, kahinlik, simit hattı ve komik rozetler kazanılır. Rozetler puan yerine geçmez ama ofis itibarına direkt etki eder 😄
+        </RuleCard>
+      </div>
+
+      <div className="mt-6 rounded-[1.75rem] border border-red-100 bg-red-50/70 p-5">
+        <h3 className="mb-4 text-xl font-black">⚖️ Eşit Puan Kuralı</h3>
+        <div className="grid gap-2 md:grid-cols-2">
+          {tiebreakers.map((item, index) => (
+            <div key={item} className="flex items-center gap-3 rounded-2xl bg-white p-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-red-500 text-sm font-black text-white">{index + 1}</div>
+              <div className="font-black text-slate-700">{item}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-6 rounded-[1.75rem] border border-amber-100 bg-amber-50/70 p-5">
+        <h3 className="mb-3 text-xl font-black">🧾 Kısa Özet</h3>
+        <ul className="space-y-2 text-sm font-bold leading-6 text-slate-700">
+          <li>• Maç başlamadan tahmin yapılır; başladıktan sonra tahmin kapanır.</li>
+          <li>• Skor girilince puanlar otomatik hesaplanır.</li>
+          <li>• Tahmin yapmayan oyuncuya -3 puan yazılır.</li>
+          <li>• Grup sonrası maçlarda beraberlik tahmini yoktur.</li>
+          <li>• Joker hakkı güçlüdür ama yanlışta daha fazla yakar.</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 function MobileBottomNav({ activeTab, setActiveTab, isAdmin }: { activeTab: string; setActiveTab: (tab: string) => void; isAdmin: boolean }) {
   const items = [
     { key: "dashboard", label: "Ana", icon: "🏠" },
@@ -2144,6 +2342,7 @@ function MobileBottomNav({ activeTab, setActiveTab, isAdmin }: { activeTab: stri
     { key: "maclar", label: "Maçlar", icon: "⚽" },
     { key: "profil", label: "Profil", icon: "👤" },
     { key: "karsilastir", label: "Rakip", icon: "🥊" },
+    { key: "kurallar", label: "Kural", icon: "📜" },
     ...(isAdmin ? [{ key: "admin", label: "Admin", icon: "👑" }] : []),
   ];
   return (
