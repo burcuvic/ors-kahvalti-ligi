@@ -177,53 +177,78 @@ function shareDailySummary(
   predictions: Prediction[]
 ) {
   const now = new Date();
-  const todayRange = getFootballDayRange(0, now);
 
-  const todayMatches = matches.filter((m) => {
+  // Özet artık bugünün değil, bir önceki futbol gününün raporunu verir.
+  // Futbol günü 06:00'da değiştiği için gece 02:00 / 04:00 maçları
+  // hâlâ önceki akşamın maçları gibi aynı özete dahil olur.
+  const yesterdayRange = getFootballDayRange(-1, now);
+
+  const summaryMatches = matches.filter((m) => {
     const t = new Date(m.match_time);
-    return t >= todayRange.start && t < todayRange.end;
+    return t >= yesterdayRange.start && t < yesterdayRange.end;
   });
 
-  const todayFinished = todayMatches.filter((m) => m.result);
+  const finishedMatches = summaryMatches.filter((m) => m.result);
 
   const sorted = [...players].sort((a, b) => Number(b.total_points || 0) - Number(a.total_points || 0));
   const lider = sorted[0];
   const kurbanlar = getBreakfastLinePlayers(players);
 
-  // Bugünün kahini: en çok doğru bildiği
-  const todayStats = players.map((p) => {
-    let correct = 0, total = 0;
-    todayFinished.forEach((m) => {
+  // Dünün kahini: önceki futbol gününde en çok doğru bilen oyuncu
+  const dayStats = players.map((p) => {
+    let correct = 0;
+    let total = 0;
+
+    finishedMatches.forEach((m) => {
       const pred = predictions.find((pr) => pr.player_id === p.id && pr.match_id === m.id);
-      if (pred && pred.prediction !== "YOK") {
+
+      if (pred && pred.prediction !== "YOK" && pred.prediction !== "BILINMIYOR") {
         total++;
         if (pred.prediction === m.result) correct++;
       }
     });
+
     return { player: p, correct, total };
   });
 
-  const todayKahin = [...todayStats].sort((a, b) => b.correct - a.correct)[0];
-  const todayKurban = [...todayStats].filter((s) => s.total > 0).sort((a, b) => a.correct - b.correct)[0];
+  const dayKahin = [...dayStats]
+    .filter((s) => s.total > 0)
+    .sort((a, b) => {
+      if (b.correct !== a.correct) return b.correct - a.correct;
+      return b.total - a.total;
+    })[0];
+
+  const dayKurban = [...dayStats]
+    .filter((s) => s.total > 0)
+    .sort((a, b) => {
+      if (a.correct !== b.correct) return a.correct - b.correct;
+      return b.total - a.total;
+    })[0];
 
   const openCount = matches.filter((m) => {
     return !m.result && new Date(m.match_time).getTime() > Date.now();
   }).length;
 
-  const dateStr = now.toLocaleDateString("tr-TR", { day: "2-digit", month: "long", weekday: "long" });
+  const dateStr = yesterdayRange.start.toLocaleDateString("tr-TR", {
+    day: "2-digit",
+    month: "long",
+    weekday: "long",
+  });
 
-  let message = `🌅 ORS Kahvaltı Ligi — Günün Özeti\n📅 ${dateStr}\n\n`;
+  let message = `🌅 ORS Kahvaltı Ligi — Dünün Özeti\n📅 ${dateStr}\n\n`;
   message += `🏆 Genel Lider: ${lider?.name || "—"} (${lider?.total_points || 0} puan)\n`;
   message += `🥯 Kahvaltı Hattı: ${kurbanlar.map((p) => p.name).join(", ") || "—"}\n\n`;
 
-  if (todayFinished.length > 0) {
-    message += `🔥 Bugünün Kahini: ${todayKahin?.player.name || "—"} (${todayKahin?.correct || 0}/${todayKahin?.total || 0})\n`;
-    if (todayKurban && todayKurban.correct < todayKurban.total) {
-      message += `💔 Bugün Yandı: ${todayKurban.player.name} (${todayKurban.correct}/${todayKurban.total})\n`;
+  if (finishedMatches.length > 0) {
+    message += `🔥 Dünün Kahini: ${dayKahin?.player.name || "—"} (${dayKahin?.correct || 0}/${dayKahin?.total || 0})\n`;
+
+    if (dayKurban && dayKurban.correct < dayKurban.total) {
+      message += `💔 Dün Yandı: ${dayKurban.player.name} (${dayKurban.correct}/${dayKurban.total})\n`;
     }
-    message += `\n⚽ Bugün ${todayFinished.length} maç oynandı\n`;
+
+    message += `\n⚽ Dün ${finishedMatches.length} maç oynandı\n`;
   } else {
-    message += `⚽ Bugün henüz maç sonuçlanmadı\n`;
+    message += `⚽ Dün sonuçlanan maç yok\n`;
   }
 
   message += `📊 Açık maç: ${openCount}\n\n`;
@@ -1155,7 +1180,7 @@ export default function Home() {
                 onClick={() => shareDailySummary(players, matches, predictions)}
                 className="rounded-full bg-amber-400 px-4 py-2 text-sm font-black text-slate-950 hover:bg-amber-500 transition"
               >
-                🌅 Günün Özeti
+                🌅 Dünün Özeti
               </button>
             )}
             <button onClick={logout} className="rounded-full bg-red-500 px-4 py-2 text-sm font-black text-white">Çıkış</button>
@@ -2264,6 +2289,34 @@ function RuleCard({ icon, title, children }: { icon: string; title: string; chil
 
 
 
+
+function isPlaceholderTeamName(team?: string | null) {
+  const name = (team || "").trim();
+  if (!name) return true;
+
+  // Kodda tanımlı gerçek ülke adları her zaman takım sayılır.
+  if (TEAM_FLAG_CODES[name]) return false;
+
+  const normalized = name
+    .toLocaleLowerCase("tr-TR")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  // D3, 3D, A1, 1A gibi grup sıralaması placeholder'ları
+  if (/^[a-l]\s?[1-4]$/.test(normalized)) return true;
+  if (/^[1-4]\s?[a-l]$/.test(normalized)) return true;
+
+  // Yarı Final 1 Kazananı, Grup D 3.sü, Finalisti 1 gibi geçici isimler
+  const placeholderWords = [
+    "kazanan", "kazananı", "kaybeden", "kaybedeni", "mağlup", "mağlubu",
+    "galip", "galibi", "winner", "loser", "finalist", "finalisti",
+    "birincisi", "ikincisi", "üçüncüsü", "dördüncüsü",
+    "1.", "2.", "3.", "4.", "grup ", "grubu"
+  ];
+
+  return placeholderWords.some((word) => normalized.includes(word));
+}
+
 type TeamInfo = {
   name: string;
   groups: string[];
@@ -2297,9 +2350,12 @@ function TeamInfoPage({ matches, players }: { matches: Match[]; players: Player[
     const map: Record<string, TeamInfo> = {};
 
     const ensure = (team: string) => {
-      if (!map[team]) {
-        map[team] = {
-          name: team,
+      const cleanTeam = team.trim();
+      if (isPlaceholderTeamName(cleanTeam)) return null;
+
+      if (!map[cleanTeam]) {
+        map[cleanTeam] = {
+          name: cleanTeam,
           groups: [],
           played: 0,
           wins: 0,
@@ -2309,16 +2365,20 @@ function TeamInfoPage({ matches, players }: { matches: Match[]; players: Player[
           ga: 0,
           points: 0,
           form: [],
-          championPickers: players.filter((p) => p.champion_team === team),
+          championPickers: players.filter((p) => p.champion_team === cleanTeam),
           eliminatedByKnockout: false,
         };
       }
-      return map[team];
+      return map[cleanTeam];
     };
 
     matches.forEach((match) => {
       const home = ensure(match.home_team);
       const away = ensure(match.away_team);
+
+      // D3, A1, "Yarı Final 1 Kazananı" gibi geçici eşleşme isimleri takım kartına eklenmez.
+      // Gerçek takım adı maçlara yazılınca otomatik görünür.
+      if (!home || !away) return;
 
       if (match.league?.startsWith("Grup")) {
         if (!home.groups.includes(match.league)) home.groups.push(match.league);
@@ -2494,13 +2554,6 @@ function TeamInfoPage({ matches, players }: { matches: Match[]; players: Player[
                     ))}
                   </div>
                 )}
-              </div>
-
-              <div className="mt-3 rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                <div className="text-xs font-black uppercase tracking-wide text-slate-500">Geriden gelip kazanma</div>
-                <div className="mt-1 text-sm font-bold text-slate-600">
-                  Maç içi skor akışı / devre skoru olmadığı için otomatik hesaplanamaz.
-                </div>
               </div>
 
               <div className="mt-3 rounded-2xl border border-red-100 bg-red-50/70 p-3">
