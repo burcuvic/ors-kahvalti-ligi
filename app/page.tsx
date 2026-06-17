@@ -1117,8 +1117,8 @@ export default function Home() {
   }
 
   const tabs = currentPlayer.is_admin
-    ? ["dashboard", "tahmin", "maclar", "profil", "karsilastir", "kurallar", "admin"]
-    : ["dashboard", "tahmin", "maclar", "profil", "karsilastir", "kurallar"];
+    ? ["dashboard", "tahmin", "maclar", "profil", "karsilastir", "takimlar", "agac", "kurallar", "admin"]
+    : ["dashboard", "tahmin", "maclar", "profil", "karsilastir", "takimlar", "agac", "kurallar"];
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-[#FFF7E8] text-slate-900">
@@ -1170,6 +1170,8 @@ export default function Home() {
                 {tab === "maclar" && "Maçlar"}
                 {tab === "profil" && "Profil"}
                 {tab === "karsilastir" && "Karşılaştır"}
+                {tab === "takimlar" && "Takımlar"}
+                {tab === "agac" && "Ağaç"}
                 {tab === "kurallar" && "Kurallar"}
                 {tab === "admin" && "Admin"}
               </button>
@@ -1479,6 +1481,22 @@ export default function Home() {
             />
           </section>
         )}
+
+        {/* TAKIMLAR */}
+        {activeTab === "takimlar" && (
+          <section className="rounded-[1.75rem] border-4 border-red-50 bg-white p-4 shadow-2xl shadow-red-100/70 md:rounded-[2rem] md:p-6">
+            <TeamInfoPage matches={matches} players={players} />
+          </section>
+        )}
+
+
+        {/* TURNUVA AĞACI */}
+        {activeTab === "agac" && (
+          <section className="rounded-[1.75rem] border-4 border-red-50 bg-white p-4 shadow-2xl shadow-red-100/70 md:rounded-[2rem] md:p-6">
+            <TournamentTree matches={matches} players={players} currentPlayer={currentPlayer} />
+          </section>
+        )}
+
 
         {/* KURALLAR */}
         {activeTab === "kurallar" && (
@@ -2244,6 +2262,404 @@ function RuleCard({ icon, title, children }: { icon: string; title: string; chil
   );
 }
 
+
+
+type TeamInfo = {
+  name: string;
+  groups: string[];
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  gf: number;
+  ga: number;
+  points: number;
+  form: { result: "G" | "B" | "M"; score: string; opponent: string; date: string }[];
+  championPickers: Player[];
+  eliminatedByKnockout: boolean;
+};
+
+function TeamInfoPage({ matches, players }: { matches: Match[]; players: Player[] }) {
+  const [teamSearch, setTeamSearch] = useState("");
+  const [groupFilter, setGroupFilter] = useState("Tümü");
+
+  const knockoutStages = ["Son 32", "Son 16", "Çeyrek Final", "Yarı Final", "Üçüncülük", "Final"];
+
+  const groups = useMemo(() => {
+    const set = new Set<string>();
+    matches.forEach((m) => {
+      if (m.league?.startsWith("Grup")) set.add(m.league);
+    });
+    return ["Tümü", ...Array.from(set).sort((a, b) => a.localeCompare(b, "tr"))];
+  }, [matches]);
+
+  const teamStats = useMemo(() => {
+    const map: Record<string, TeamInfo> = {};
+
+    const ensure = (team: string) => {
+      if (!map[team]) {
+        map[team] = {
+          name: team,
+          groups: [],
+          played: 0,
+          wins: 0,
+          draws: 0,
+          losses: 0,
+          gf: 0,
+          ga: 0,
+          points: 0,
+          form: [],
+          championPickers: players.filter((p) => p.champion_team === team),
+          eliminatedByKnockout: false,
+        };
+      }
+      return map[team];
+    };
+
+    matches.forEach((match) => {
+      const home = ensure(match.home_team);
+      const away = ensure(match.away_team);
+
+      if (match.league?.startsWith("Grup")) {
+        if (!home.groups.includes(match.league)) home.groups.push(match.league);
+        if (!away.groups.includes(match.league)) away.groups.push(match.league);
+      }
+
+      const hasScore =
+        match.result &&
+        match.home_score !== null &&
+        match.home_score !== undefined &&
+        match.away_score !== null &&
+        match.away_score !== undefined;
+
+      if (!hasScore) return;
+
+      const homeScore = Number(match.home_score || 0);
+      const awayScore = Number(match.away_score || 0);
+      const date = new Date(match.match_time).toLocaleDateString("tr-TR", { day: "2-digit", month: "short" });
+
+      home.played += 1;
+      away.played += 1;
+      home.gf += homeScore;
+      home.ga += awayScore;
+      away.gf += awayScore;
+      away.ga += homeScore;
+
+      if (match.result === "1") {
+        home.wins += 1;
+        away.losses += 1;
+        home.points += 3;
+        home.form.push({ result: "G", score: `${homeScore}-${awayScore}`, opponent: match.away_team, date });
+        away.form.push({ result: "M", score: `${awayScore}-${homeScore}`, opponent: match.home_team, date });
+
+        if (knockoutStages.includes(match.league || "") && match.league !== "Üçüncülük") {
+          away.eliminatedByKnockout = true;
+        }
+      } else if (match.result === "2") {
+        away.wins += 1;
+        home.losses += 1;
+        away.points += 3;
+        away.form.push({ result: "G", score: `${awayScore}-${homeScore}`, opponent: match.home_team, date });
+        home.form.push({ result: "M", score: `${homeScore}-${awayScore}`, opponent: match.away_team, date });
+
+        if (knockoutStages.includes(match.league || "") && match.league !== "Üçüncülük") {
+          home.eliminatedByKnockout = true;
+        }
+      } else {
+        home.draws += 1;
+        away.draws += 1;
+        home.points += 1;
+        away.points += 1;
+        home.form.push({ result: "B", score: `${homeScore}-${awayScore}`, opponent: match.away_team, date });
+        away.form.push({ result: "B", score: `${awayScore}-${homeScore}`, opponent: match.home_team, date });
+      }
+    });
+
+    return Object.values(map)
+      .map((team) => ({
+        ...team,
+        groups: team.groups.length ? team.groups.sort((a, b) => a.localeCompare(b, "tr")) : ["Grup bilinmiyor"],
+        form: team.form.slice(-5).reverse(),
+      }))
+      .sort((a, b) => {
+        const pointsDiff = b.points - a.points;
+        if (pointsDiff !== 0) return pointsDiff;
+        const gdDiff = (b.gf - b.ga) - (a.gf - a.ga);
+        if (gdDiff !== 0) return gdDiff;
+        const gfDiff = b.gf - a.gf;
+        if (gfDiff !== 0) return gfDiff;
+        return a.name.localeCompare(b.name, "tr");
+      });
+  }, [matches, players]);
+
+  const filteredTeams = teamStats.filter((team) => {
+    const q = teamSearch.trim().toLowerCase();
+    const matchesSearch = !q || team.name.toLowerCase().includes(q) || team.groups.join(" ").toLowerCase().includes(q);
+    const matchesGroup = groupFilter === "Tümü" || team.groups.includes(groupFilter);
+    return matchesSearch && matchesGroup;
+  });
+
+  const mostPickedTeam = [...teamStats].sort((a, b) => b.championPickers.length - a.championPickers.length)[0];
+  const bestAttack = [...teamStats].sort((a, b) => b.gf - a.gf)[0];
+  const bestDefense = [...teamStats].filter((t) => t.played > 0).sort((a, b) => a.ga - b.ga || b.points - a.points)[0];
+
+  const getFormLabel = (team: TeamInfo) => {
+    const last = team.form.slice(0, 5);
+    const wins = last.filter((f) => f.result === "G").length;
+    const losses = last.filter((f) => f.result === "M").length;
+    if (team.played === 0) return { text: "Bekliyor", cls: "bg-slate-100 text-slate-500" };
+    if (team.eliminatedByKnockout) return { text: "Elendi", cls: "bg-red-100 text-red-600" };
+    if (wins >= 3 || (last.length >= 2 && wins === last.length)) return { text: "Formda", cls: "bg-emerald-100 text-emerald-700" };
+    if (losses >= 3) return { text: "Düşüşte", cls: "bg-red-100 text-red-600" };
+    return { text: "Dengeli", cls: "bg-amber-100 text-amber-700" };
+  };
+
+  return (
+    <div>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-black">🏳️ Takım Bilgileri</h2>
+          <p className="mt-1 text-sm font-bold text-slate-500">
+            Takımların gol, form, grup ve şampiyon tahmini bilgileri maç sonuçlarından otomatik hesaplanır.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-black text-amber-800">
+          Toplam {teamStats.length} takım
+        </div>
+      </div>
+
+      <div className="mb-6 grid gap-3 md:grid-cols-3">
+        <MiniDashboardCard icon="🔥" title="En Golcü" value={bestAttack?.name || "-"} note={`${bestAttack?.gf || 0} gol attı`} tone="amber" />
+        <MiniDashboardCard icon="🛡️" title="En Az Yiyen" value={bestDefense?.name || "-"} note={`${bestDefense?.ga ?? 0} gol yedi`} tone="blue" />
+        <MiniDashboardCard icon="🏆" title="En Çok Seçilen" value={mostPickedTeam?.name || "-"} note={`${mostPickedTeam?.championPickers.length || 0} şampiyon tahmini`} tone="red" />
+      </div>
+
+      <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center">
+        <input
+          value={teamSearch}
+          onChange={(e) => setTeamSearch(e.target.value)}
+          placeholder="🔎 Takım ara: Türkiye, İran, Brezilya..."
+          className="w-full rounded-2xl border border-amber-100 bg-amber-50/60 p-3 font-bold outline-none focus:border-red-300 md:flex-1"
+        />
+        <select
+          value={groupFilter}
+          onChange={(e) => setGroupFilter(e.target.value)}
+          className="rounded-2xl border border-amber-100 bg-white p-3 font-black outline-none"
+        >
+          {groups.map((group) => (
+            <option key={group} value={group}>{group}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className="mb-4 text-sm font-black text-slate-500">{filteredTeams.length} takım gösteriliyor</div>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {filteredTeams.map((team) => {
+          const gd = team.gf - team.ga;
+          const formLabel = getFormLabel(team);
+          return (
+            <div key={team.name} className="rounded-[1.75rem] border border-amber-100 bg-white p-4 shadow-lg shadow-amber-100/50">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-xl font-black"><TeamName team={team.name} /></div>
+                  <div className="mt-1 text-xs font-black uppercase tracking-wide text-slate-400">{team.groups.join(" • ")}</div>
+                </div>
+                <span className={`rounded-full px-3 py-1 text-xs font-black ${formLabel.cls}`}>{formLabel.text}</span>
+              </div>
+
+              <div className="grid grid-cols-4 gap-2 text-center">
+                <div className="rounded-2xl bg-amber-50 p-2"><div className="text-xs font-black text-slate-400">Puan</div><div className="text-xl font-black">{team.points}</div></div>
+                <div className="rounded-2xl bg-emerald-50 p-2"><div className="text-xs font-black text-slate-400">G</div><div className="text-xl font-black text-emerald-700">{team.wins}</div></div>
+                <div className="rounded-2xl bg-slate-50 p-2"><div className="text-xs font-black text-slate-400">B</div><div className="text-xl font-black">{team.draws}</div></div>
+                <div className="rounded-2xl bg-red-50 p-2"><div className="text-xs font-black text-slate-400">M</div><div className="text-xl font-black text-red-600">{team.losses}</div></div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-2"><div className="text-xs font-black text-slate-400">Attı</div><div className="text-lg font-black">{team.gf}</div></div>
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-2"><div className="text-xs font-black text-slate-400">Yedi</div><div className="text-lg font-black">{team.ga}</div></div>
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-2"><div className="text-xs font-black text-slate-400">Averaj</div><div className={`text-lg font-black ${gd >= 0 ? "text-emerald-700" : "text-red-600"}`}>{gd > 0 ? "+" : ""}{gd}</div></div>
+              </div>
+
+              <div className="mt-3 rounded-2xl border border-amber-100 bg-amber-50/70 p-3">
+                <div className="mb-2 text-xs font-black uppercase tracking-wide text-amber-700">Son form</div>
+                {team.form.length === 0 ? (
+                  <div className="text-sm font-bold text-slate-500">Henüz maç sonucu yok.</div>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {team.form.map((f, idx) => (
+                      <span key={`${team.name}-${idx}`} title={`${f.date} • ${f.opponent} • ${f.score}`} className={`rounded-full px-2.5 py-1 text-xs font-black ${f.result === "G" ? "bg-emerald-500 text-white" : f.result === "B" ? "bg-slate-300 text-slate-800" : "bg-red-500 text-white"}`}>
+                        {f.result}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-3 rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                <div className="text-xs font-black uppercase tracking-wide text-slate-500">Geriden gelip kazanma</div>
+                <div className="mt-1 text-sm font-bold text-slate-600">
+                  Maç içi skor akışı / devre skoru olmadığı için otomatik hesaplanamaz.
+                </div>
+              </div>
+
+              <div className="mt-3 rounded-2xl border border-red-100 bg-red-50/70 p-3">
+                <div className="text-xs font-black uppercase tracking-wide text-red-600">Şampiyon seçenler</div>
+                <div className="mt-1 text-sm font-black text-slate-700">
+                  {team.championPickers.length > 0 ? team.championPickers.map((p) => p.name).join(" • ") : "Kimse seçmedi"}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function TournamentTree({ matches, players, currentPlayer }: { matches: Match[]; players: Player[]; currentPlayer: Player | null }) {
+  const stages = ["Son 32", "Son 16", "Çeyrek Final", "Yarı Final", "Üçüncülük", "Final"];
+
+  const stageLabel = (match: Match) => match.league || match.breakfast_round || "";
+
+  const knockoutMatches = matches
+    .filter((m) => stages.some((stage) => stageLabel(m) === stage))
+    .sort((a, b) => new Date(a.match_time).getTime() - new Date(b.match_time).getTime());
+
+  const matchesByStage = stages.map((stage) => ({
+    stage,
+    matches: knockoutMatches.filter((m) => stageLabel(m) === stage),
+  }));
+
+  const finalMatch = knockoutMatches.find((m) => stageLabel(m) === "Final" && m.result);
+  const champion = finalMatch?.result === "1" ? finalMatch.home_team : finalMatch?.result === "2" ? finalMatch.away_team : null;
+
+  const championPicks: Record<string, Player[]> = {};
+  players.forEach((player) => {
+    if (!player.champion_team) return;
+    if (!championPicks[player.champion_team]) championPicks[player.champion_team] = [];
+    championPicks[player.champion_team].push(player);
+  });
+
+  const myPick = currentPlayer?.champion_team || null;
+  const myPickStillAlive = myPick
+    ? knockoutMatches.some((m) => !m.result && (m.home_team === myPick || m.away_team === myPick)) || !champion
+    : false;
+
+  return (
+    <div>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-black">🌳 Turnuva Ağacı</h2>
+          <p className="mt-1 text-sm font-bold text-slate-500">
+            Eleme maçları Supabase’deki maç aşamasına göre otomatik gruplanır. Skor girildikçe kazanan vurgulanır.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-black text-amber-800">
+          🏆 {champion ? <>Şampiyon: <TeamName team={champion} /></> : "Şampiyon henüz belli değil"}
+        </div>
+      </div>
+
+      <div className="mb-6 grid gap-3 md:grid-cols-3">
+        <div className="rounded-[1.5rem] border border-amber-100 bg-amber-50/70 p-4">
+          <div className="text-sm font-black uppercase tracking-wide text-slate-500">Benim Şampiyon Tahminim</div>
+          <div className="mt-2 text-xl font-black">{myPick ? <TeamName team={myPick} /> : "Seçilmedi"}</div>
+          <div className={`mt-2 inline-flex rounded-full px-3 py-1 text-xs font-black ${!myPick ? "bg-slate-100 text-slate-500" : champion && champion === myPick ? "bg-green-100 text-green-700" : champion && champion !== myPick ? "bg-red-100 text-red-600" : myPickStillAlive ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+            {!myPick ? "Tahmin yok" : champion && champion === myPick ? "Tuttu 🏆" : champion && champion !== myPick ? "Yattı 💔" : myPickStillAlive ? "Hâlâ yaşıyor ✅" : "Durum bekleniyor"}
+          </div>
+        </div>
+        <div className="rounded-[1.5rem] border border-red-100 bg-red-50/70 p-4">
+          <div className="text-sm font-black uppercase tracking-wide text-slate-500">Eleme Maçı</div>
+          <div className="mt-2 text-3xl font-black text-red-500">{knockoutMatches.length}</div>
+          <div className="mt-1 text-xs font-bold text-slate-500">Son 32’den finale kadar</div>
+        </div>
+        <div className="rounded-[1.5rem] border border-slate-100 bg-white p-4">
+          <div className="text-sm font-black uppercase tracking-wide text-slate-500">Şampiyon Tahmini</div>
+          <div className="mt-2 text-3xl font-black text-slate-900">{Object.keys(championPicks).length}</div>
+          <div className="mt-1 text-xs font-bold text-slate-500">Farklı ülkeye dağılmış</div>
+        </div>
+      </div>
+
+      {knockoutMatches.length === 0 ? (
+        <div className="rounded-[1.75rem] border-2 border-dashed border-amber-200 bg-amber-50 p-6 text-center">
+          <div className="text-5xl">🌱</div>
+          <h3 className="mt-3 text-xl font-black">Ağaç henüz filizlenmedi</h3>
+          <p className="mx-auto mt-2 max-w-2xl text-sm font-bold text-slate-600">
+            Grup aşaması bitmeden gerçek eleme ağacı tam netleşmez. Admin panelinden Son 32, Son 16, Çeyrek Final, Yarı Final ve Final maçları eklendikçe burası otomatik dolacak.
+          </p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto pb-3">
+          <div className="grid min-w-[980px] gap-4" style={{ gridTemplateColumns: `repeat(${stages.length}, minmax(220px, 1fr))` }}>
+            {matchesByStage.map(({ stage, matches: stageMatches }) => (
+              <div key={stage} className="rounded-[1.75rem] border border-amber-100 bg-gradient-to-b from-amber-50 to-white p-3">
+                <div className={`mb-3 rounded-2xl px-3 py-2 text-center font-black ${stage === "Final" ? "bg-amber-400 text-slate-950" : "bg-red-500 text-white"}`}>
+                  {stage === "Final" ? "🏆 Final" : stage === "Üçüncülük" ? "🥉 Üçüncülük" : stage}
+                </div>
+
+                {stageMatches.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-4 text-center text-sm font-bold text-slate-400">
+                    Eşleşme bekleniyor
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {stageMatches.map((match) => {
+                      const winner = match.result === "1" ? match.home_team : match.result === "2" ? match.away_team : null;
+                      const hasScore = match.home_score !== null && match.home_score !== undefined;
+                      return (
+                        <div key={match.id} className={`rounded-2xl border bg-white p-3 shadow-sm ${match.result ? "border-amber-200" : "border-slate-100"}`}>
+                          <div className="mb-2 flex items-center justify-between gap-2 text-[11px] font-black text-slate-400">
+                            <span>{new Date(match.match_time).toLocaleDateString("tr-TR", { day: "2-digit", month: "short" })}</span>
+                            <span>{new Date(match.match_time).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}</span>
+                          </div>
+
+                          <div className={`flex items-center justify-between gap-2 rounded-xl px-2 py-2 ${winner === match.home_team ? "bg-green-100 text-green-800" : "bg-slate-50"}`}>
+                            <span className="text-sm font-black"><TeamName team={match.home_team} /></span>
+                            <span className="text-lg font-black">{hasScore ? match.home_score : "-"}</span>
+                          </div>
+                          <div className={`mt-1 flex items-center justify-between gap-2 rounded-xl px-2 py-2 ${winner === match.away_team ? "bg-green-100 text-green-800" : "bg-slate-50"}`}>
+                            <span className="text-sm font-black"><TeamName team={match.away_team} /></span>
+                            <span className="text-lg font-black">{hasScore ? match.away_score : "-"}</span>
+                          </div>
+
+                          <div className="mt-2 rounded-xl bg-amber-50 px-2 py-1 text-center text-xs font-black text-amber-800">
+                            {winner ? <>Kazanan: <TeamName team={winner} /></> : match.result === "X" ? "Beraberlik sonucu girilmiş" : "Skor bekleniyor"}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-6 rounded-[1.75rem] border border-amber-100 bg-amber-50/60 p-5">
+        <h3 className="mb-4 text-xl font-black">🏆 Şampiyon Tahminleri</h3>
+        {Object.keys(championPicks).length === 0 ? (
+          <div className="rounded-2xl bg-white p-4 text-sm font-bold text-slate-500">Henüz şampiyon tahmini yok.</div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {Object.entries(championPicks)
+              .sort((a, b) => b[1].length - a[1].length)
+              .map(([team, pickers]) => (
+                <div key={team} className={`rounded-2xl border p-4 ${champion && champion === team ? "border-green-300 bg-green-50" : champion && champion !== team ? "border-slate-100 bg-slate-50 opacity-70" : "border-amber-100 bg-white"}`}>
+                  <div className="text-lg font-black"><TeamName team={team} /></div>
+                  <div className="mt-2 text-sm font-bold text-slate-500">{pickers.map((p) => p.name).join(" • ")}</div>
+                  <div className="mt-3 inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-700">
+                    {pickers.length} kişi seçti
+                  </div>
+                </div>
+              ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function RulesPage() {
   const scoreRules = [
     { label: "Doğru tahmin", value: "+3", tone: "bg-emerald-100 text-emerald-700" },
@@ -2342,6 +2758,8 @@ function MobileBottomNav({ activeTab, setActiveTab, isAdmin }: { activeTab: stri
     { key: "maclar", label: "Maçlar", icon: "⚽" },
     { key: "profil", label: "Profil", icon: "👤" },
     { key: "karsilastir", label: "Rakip", icon: "🥊" },
+    { key: "takimlar", label: "Takım", icon: "🏳️" },
+    { key: "agac", label: "Ağaç", icon: "🌳" },
     { key: "kurallar", label: "Kural", icon: "📜" },
     ...(isAdmin ? [{ key: "admin", label: "Admin", icon: "👑" }] : []),
   ];
