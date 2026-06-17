@@ -135,25 +135,60 @@ function shareMatchReminder(match: Match) {
 }
 
 // === GÜNÜN ÖZETİ ===
+
+// === FUTBOL GÜNÜ ===
+// Gece 02:00 / 04:00 maçları takvimde ertesi gün olsa bile
+// uygulamada aynı "maç günü" içinde kalsın diye gün 06:00'da değişir.
+const FOOTBALL_DAY_START_HOUR = 6;
+
+function getFootballDayRange(offsetDays = 0, baseDate = new Date()) {
+  const start = new Date(baseDate);
+  start.setHours(FOOTBALL_DAY_START_HOUR, 0, 0, 0);
+
+  if (baseDate.getHours() < FOOTBALL_DAY_START_HOUR) {
+    start.setDate(start.getDate() - 1);
+  }
+
+  start.setDate(start.getDate() + offsetDays);
+
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+
+  return { start, end };
+}
+
+function getBreakfastLinePlayers(players: Player[]) {
+  const sortedAsc = [...players].sort(
+    (a, b) => Number(a.total_points || 0) - Number(b.total_points || 0)
+  );
+
+  if (sortedAsc.length <= 2) return sortedAsc;
+
+  const secondLowestScore = Number(sortedAsc[1]?.total_points || 0);
+
+  return sortedAsc.filter(
+    (player) => Number(player.total_points || 0) <= secondLowestScore
+  );
+}
+
 function shareDailySummary(
   players: Player[],
   matches: Match[],
   predictions: Prediction[]
 ) {
   const now = new Date();
-  const today = new Date(now); today.setHours(0, 0, 0, 0);
-  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+  const todayRange = getFootballDayRange(0, now);
 
   const todayMatches = matches.filter((m) => {
     const t = new Date(m.match_time);
-    return t >= today && t < tomorrow;
+    return t >= todayRange.start && t < todayRange.end;
   });
 
   const todayFinished = todayMatches.filter((m) => m.result);
 
   const sorted = [...players].sort((a, b) => Number(b.total_points || 0) - Number(a.total_points || 0));
   const lider = sorted[0];
-  const kurbanlar = sorted.slice(-2).reverse();
+  const kurbanlar = getBreakfastLinePlayers(players);
 
   // Bugünün kahini: en çok doğru bildiği
   const todayStats = players.map((p) => {
@@ -629,15 +664,16 @@ export default function Home() {
 
   const applyTimeFilter = (matchList: Match[], filter: string) => {
     const now = new Date();
+    const todayRange = getFootballDayRange(0, now);
+    const tomorrowRange = getFootballDayRange(1, now);
+
     return matchList.filter((match) => {
       const matchDate = new Date(match.match_time);
-      const today = new Date(now); today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
-      const nextDay = new Date(today); nextDay.setDate(today.getDate() + 2);
-      const isToday = matchDate >= today && matchDate < tomorrow;
-      const isTomorrow = matchDate >= tomorrow && matchDate < nextDay;
+      const isToday = matchDate >= todayRange.start && matchDate < todayRange.end;
+      const isTomorrow = matchDate >= tomorrowRange.start && matchDate < tomorrowRange.end;
       const isStarted = matchDate.getTime() <= now.getTime();
       const isFinished = !!match.result;
+
       if (filter === "Tümü") return true;
       if (filter === "Bugün") return isToday;
       if (filter === "Yarın") return isTomorrow;
@@ -716,6 +752,8 @@ export default function Home() {
       return a.name.localeCompare(b.name, "tr");
     });
   }, [players, playerStreaks, jokerScores]);
+
+  const breakfastLinePlayers = useMemo(() => getBreakfastLinePlayers(players), [players]);
 
   const getPointsByPlayer = (matchList: Match[], ascending = false) => {
     const data = players.map((player) => {
@@ -1110,7 +1148,7 @@ export default function Home() {
 
             <div className="mb-6 grid gap-3 md:grid-cols-3">
               <MiniDashboardCard icon="👑" title="Genel Lider" value={sortedPlayers[0]?.name || "-"} note={`${sortedPlayers[0]?.total_points || 0} puan`} tone="amber" />
-              <MiniDashboardCard icon="🥯" title="Kahvaltı Hattı" value={stageScores.slice(0, 2).map((p) => p.name).join(" • ") || "-"} note="Bu aşamada riskli bölge" tone="red" />
+              <MiniDashboardCard icon="🥯" title="Kahvaltı Hattı" value={breakfastLinePlayers.map((p) => p.name).join(" • ") || "-"} note="Genel toplamda en düşük puanlılar" tone="red" />
               <MiniDashboardCard icon="⚽" title="Açık Maç" value={String(openMatchesCount)} note="Tahmin için hazır" tone="blue" />
             </div>
 
