@@ -786,6 +786,14 @@ export default function Home() {
     });
   };
 
+  const isGroupStageMatch = (match: Match) => {
+    return !!match.league?.startsWith("Grup");
+  };
+
+  const getPredictionOptions = (match: Match): Array<"1" | "X" | "2"> => {
+    return isGroupStageMatch(match) ? ["1", "X", "2"] : ["1", "2"];
+  };
+
   const makePrediction = async (match: Match, prediction: string, useJoker = false) => {
     if (!currentPlayer) return;
     if (new Date(match.match_time).getTime() <= Date.now()) { alert("Maç saati geldiği için tahmin kapandı 😄"); return; }
@@ -837,13 +845,15 @@ export default function Home() {
     alert(`${winners.length} kişiye şampiyon bonusu işlendi 🏆`);
   };
 
-  const recalculateAllScores = async (overrideMatchId?: string, overrideResult?: string) => {
+  const recalculateAllScores = async () => {
     const { data: latestPlayers } = await supabase.from("players").select("*");
     const { data: latestPredictions } = await supabase.from("predictions").select("*");
+    const { data: latestMatches } = await supabase.from("matches").select("*");
     const { data: latestBonusLogs } = await supabase.from("bonus_logs").select("*");
 
     const playerList = latestPlayers || [];
     const predictionList = latestPredictions || [];
+    const matchList = latestMatches || [];
     const bonusList = latestBonusLogs || [];
 
     for (const player of playerList) {
@@ -851,15 +861,14 @@ export default function Home() {
       let correct = 0, wrong = 0, blank = 0, predictionPoints = 0;
 
       for (const pred of playerPredictions) {
-        const predMatch = matches.find((m) => m.id === pred.match_id);
-        const finalResult = pred.match_id === overrideMatchId ? overrideResult : predMatch?.result;
-        if (!finalResult) continue;
+        const predMatch = matchList.find((m) => m.id === pred.match_id);
+        if (!predMatch?.result) continue;
 
         let points = -3;
         if (pred.prediction === "YOK") {
           blank++;
           points = -3;
-        } else if (pred.prediction === finalResult) {
+        } else if (pred.prediction === predMatch.result) {
           correct++;
           points = pred.is_joker ? 6 : 3;
         } else {
@@ -871,13 +880,20 @@ export default function Home() {
         await supabase.from("predictions").update({ points }).eq("id", pred.id);
       }
 
-      const bonusPoints = bonusList.filter((b) => b.player_id === player.id).reduce((sum, b) => sum + Number(b.points || 0), 0);
+      const bonusPoints = bonusList
+        .filter((b) => b.player_id === player.id)
+        .reduce((sum, b) => sum + Number(b.points || 0), 0);
+
       const totalAnswered = correct + wrong;
       const successRate = totalAnswered > 0 ? Number(((correct / totalAnswered) * 100).toFixed(1)) : 0;
 
       await supabase.from("players").update({
-        correct_count: correct, wrong_count: wrong, intentional_blank: blank,
-        bonus_points: bonusPoints, total_points: predictionPoints + bonusPoints, success_rate: successRate,
+        correct_count: correct,
+        wrong_count: wrong,
+        intentional_blank: blank,
+        bonus_points: bonusPoints,
+        total_points: predictionPoints + bonusPoints,
+        success_rate: successRate,
       }).eq("id", player.id);
     }
   };
@@ -895,11 +911,21 @@ export default function Home() {
 
   const updateResult = async (match: Match, result: string, homeScore?: number, awayScore?: number) => {
     if (!currentPlayer?.is_admin || !adminUnlocked) return;
+
     await addMissingNoPredictionsForMatch(match);
-    await supabase.from("matches").update({
-      result, home_score: homeScore ?? null, away_score: awayScore ?? null,
+
+    const { error } = await supabase.from("matches").update({
+      result,
+      home_score: homeScore ?? null,
+      away_score: awayScore ?? null,
     }).eq("id", match.id);
-    await recalculateAllScores(match.id, result);
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    await recalculateAllScores();
     await loadData();
   };
 
@@ -908,6 +934,10 @@ export default function Home() {
     if (!score?.home || !score?.away) { alert("Skorları gir 😄"); return; }
     const home = Number(score.home), away = Number(score.away);
     if (Number.isNaN(home) || Number.isNaN(away)) { alert("Skorlar sayı olmalı 😄"); return; }
+    if (!isGroupStageMatch(match) && home === away) {
+      alert("Grup maçlarından sonra beraberlik yok. Eleme maçında kazanan tarafa göre skor gir 😄");
+      return;
+    }
     const result = home > away ? "1" : home < away ? "2" : "X";
     await updateResult(match, result, home, away);
   };
@@ -1111,6 +1141,8 @@ export default function Home() {
                 const consensus = getConsensus(match.id);
                 const isStarted = new Date(match.match_time).getTime() <= Date.now();
                 const status = getMatchStatus(match);
+                const predictionOptions = getPredictionOptions(match);
+                const predictionGridClass = predictionOptions.length === 3 ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2";
 
                 return (
                   <div key={match.id} className={`rounded-3xl border bg-amber-50/40 p-4 transition hover:scale-[1.01] hover:shadow-lg ${status.borderColor}`}>
@@ -1133,16 +1165,16 @@ export default function Home() {
                       <div className="rounded-2xl bg-white p-3 text-center font-black text-slate-500">Tahmin kapandı 🔒</div>
                     ) : (
                       <div className="space-y-3">
-                        <div className="grid grid-cols-3 gap-2">
-                          {["1", "X", "2"].map((v) => (
+                        <div className={predictionGridClass}>
+                          {predictionOptions.map((v) => (
                             <button key={v} onClick={() => makePrediction(match, v, false)}
                               className={`rounded-2xl py-3 text-lg font-black md:py-3 md:text-base ${myPrediction?.prediction === v && !myPrediction?.is_joker ? "bg-amber-400 text-slate-950" : "border border-amber-100 bg-white hover:bg-amber-100"}`}>
                               {v}
                             </button>
                           ))}
                         </div>
-                        <div className="grid grid-cols-3 gap-2">
-                          {["1", "X", "2"].map((v) => {
+                        <div className={predictionGridClass}>
+                          {predictionOptions.map((v) => {
                             const stageJoker = getUsedJokerForStage(match, currentPlayer.id);
                             const jokerBlocked = !!stageJoker && stageJoker.match_id !== match.id;
                             return (
@@ -1155,6 +1187,7 @@ export default function Home() {
                         </div>
                         <div className="rounded-2xl border border-purple-100 bg-purple-50 px-3 py-2 text-xs font-bold text-purple-700">
                           🃏 Joker kuralı: Her aşamada 1 hak. Doğru joker +6, yanlış joker -2.
+                          {!isGroupStageMatch(match) && " Eleme maçlarında beraberlik seçeneği yok."}
                         </div>
                       </div>
                     )}
@@ -1174,7 +1207,7 @@ export default function Home() {
                           <div className="text-xs font-bold text-slate-500">{consensus.total} tahmin</div>
                         </div>
                         <div className="space-y-2">
-                          {(["1", "X", "2"] as const).map((v) => {
+                          {predictionOptions.map((v) => {
                             const pct = consensus[v];
                             return (
                               <div key={v} className="flex items-center gap-2">
