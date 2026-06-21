@@ -157,6 +157,31 @@ function getFootballDayRange(offsetDays = 0, baseDate = new Date()) {
   return { start, end };
 }
 
+
+function getPredictionCalculatedPoints(pred: Prediction | undefined | null, match: Match | undefined | null) {
+  if (!pred) return 0;
+  if (!match?.result) return Number(pred.points || 0);
+
+  const prediction = String(pred.prediction || "").trim();
+  const result = String(match.result || "").trim();
+
+  if (prediction === "YOK") return -3;
+  if (prediction === "BILINMIYOR") return 0;
+
+  if (prediction === result) {
+    return pred.is_joker ? 6 : 3;
+  }
+
+  return pred.is_joker ? -2 : -1;
+}
+
+function isPredictionCorrect(pred: Prediction | undefined | null, match: Match | undefined | null) {
+  if (!pred || !match?.result) return false;
+  const prediction = String(pred.prediction || "").trim();
+  const result = String(match.result || "").trim();
+  return prediction !== "YOK" && prediction !== "BILINMIYOR" && prediction === result;
+}
+
 function getBreakfastLinePlayers(players: Player[]) {
   const sortedAsc = [...players].sort(
     (a, b) => Number(a.total_points || 0) - Number(b.total_points || 0)
@@ -758,7 +783,7 @@ export default function Home() {
       for (const pred of playerPredictions) {
         const match = matches.find((m) => m.id === pred.match_id);
         if (!match?.result) continue;
-        if (pred.points > 0) streak++;
+        if (getPredictionCalculatedPoints(pred, match) > 0) streak++;
         else break;
       }
       streaks[player.id] = streak;
@@ -772,11 +797,11 @@ export default function Home() {
       const jokerPreds = predictions.filter((pred) => pred.player_id === player.id && pred.is_joker);
       const jokerCorrect = jokerPreds.filter((pred) => {
         const match = matches.find((m) => m.id === pred.match_id);
-        return !!match?.result && pred.prediction === match.result;
+        return isPredictionCorrect(pred, match);
       }).length;
       const jokerWrong = jokerPreds.filter((pred) => {
         const match = matches.find((m) => m.id === pred.match_id);
-        return !!match?.result && pred.prediction !== match.result && pred.prediction !== "YOK";
+        return !!match?.result && String(pred.prediction || "").trim() !== String(match.result || "").trim() && pred.prediction !== "YOK" && pred.prediction !== "BILINMIYOR";
       }).length;
       scores[player.id] = jokerCorrect * 2 - jokerWrong;
     });
@@ -818,7 +843,7 @@ export default function Home() {
         const pred = predictions.find((p) => p.player_id === player.id && p.match_id === match.id);
         const bonus = bonusLogs.filter((b) => b.player_id === player.id && b.match_id === match.id)
           .reduce((bonusSum, b) => bonusSum + Number(b.points || 0), 0);
-        return sum + Number(pred?.points || 0) + bonus;
+        return sum + getPredictionCalculatedPoints(pred, match) + bonus;
       }, 0);
       return { ...player, period_points: points };
     });
@@ -847,7 +872,7 @@ export default function Home() {
         const pred = predictions.find((p) => p.player_id === profilePlayer.id && p.match_id === match.id);
         const bonus = bonusLogs.filter((b) => b.player_id === profilePlayer.id && b.match_id === match.id)
           .reduce((bonusSum, b) => bonusSum + Number(b.points || 0), 0);
-        return sum + Number(pred?.points || 0) + bonus;
+        return sum + getPredictionCalculatedPoints(pred, match) + bonus;
       }, 0);
       return { stage, points };
     });
@@ -959,16 +984,15 @@ export default function Home() {
         const predMatch = matchList.find((m) => m.id === pred.match_id);
         if (!predMatch?.result) continue;
 
-        let points = -3;
-        if (pred.prediction === "YOK") {
+        const prediction = String(pred.prediction || "").trim();
+        const points = getPredictionCalculatedPoints(pred, predMatch);
+
+        if (prediction === "YOK") {
           blank++;
-          points = -3;
-        } else if (pred.prediction === predMatch.result) {
+        } else if (prediction !== "BILINMIYOR" && isPredictionCorrect(pred, predMatch)) {
           correct++;
-          points = pred.is_joker ? 6 : 3;
-        } else {
+        } else if (prediction !== "BILINMIYOR") {
           wrong++;
-          points = pred.is_joker ? -2 : -1;
         }
 
         predictionPoints += points;
@@ -1386,7 +1410,7 @@ export default function Home() {
                             <span className="font-black">
                               {!isStarted && !match.result && !currentPlayer.is_admin
                                 ? "Gizli 🔒"
-                                : pred ? `${pred.prediction}${pred.is_joker ? " 🃏" : ""} (${pred.points})` : "Yok"}
+                                : pred ? `${pred.prediction}${pred.is_joker ? " 🃏" : ""} (${getPredictionCalculatedPoints(pred, match)})` : "Yok"}
                             </span>
                           </div>
                         );
@@ -1909,7 +1933,7 @@ function getPlayerBadges(
   const jokerPreds = allPreds.filter((pred) => !!pred.is_joker);
   const jokerCorrect = jokerPreds.filter((pred) => {
     const match = matches.find((m) => m.id === pred.match_id);
-    return !!match?.result && pred.prediction === match.result;
+    return isPredictionCorrect(pred, match);
   }).length;
   const jokerWrong = jokerPreds.filter((pred) => {
     const match = matches.find((m) => m.id === pred.match_id);
@@ -1948,7 +1972,7 @@ function getPlayerBadges(
     if (diffMinutes > 0 && diffMinutes <= 15) latePanic++;
 
     if (!match.result) return;
-    totalPredictionPoints += Number(pred.points || 0);
+    totalPredictionPoints += getPredictionCalculatedPoints(pred, match);
 
     const matchPreds = predictions.filter((p) => p.match_id === pred.match_id && p.prediction !== "YOK" && p.prediction !== "BILINMIYOR");
     if (matchPreds.length < 3) return;
@@ -1967,7 +1991,10 @@ function getPlayerBadges(
   // Son 5 sonuç içinde dipten çıkış hissi için küçük bir metrik
   const lastFinished = finishedPreds.slice(-5);
   if (lastFinished.length >= 3) {
-    const positives = lastFinished.filter((p) => Number(p.points || 0) > 0).length;
+    const positives = lastFinished.filter((p) => {
+      const match = matches.find((m) => m.id === p.match_id);
+      return getPredictionCalculatedPoints(p, match) > 0;
+    }).length;
     if (positives >= 3 && bottomTwo) comebackWins = positives;
   }
 
@@ -2133,7 +2160,7 @@ function getCompareMetrics(player: Player | undefined, sortedPlayers: Player[], 
     .filter((x) => x.match)
     .sort((a, b) => new Date(b.match!.match_time).getTime() - new Date(a.match!.match_time).getTime())
     .slice(0, 10);
-  const lastTenPoints = lastTen.reduce((sum, x) => sum + Number(x.pred.points || 0), 0);
+  const lastTenPoints = lastTen.reduce((sum, x) => sum + getPredictionCalculatedPoints(x.pred, x.match), 0);
   return {
     player,
     rank,
@@ -2181,8 +2208,16 @@ function RivalCompare({ players, sortedPlayers, predictions, matches, playerStre
     return a?.prediction === b?.prediction;
   }).length;
   const differentPicks = commonMatches.length - samePicks;
-  const leftCommonPoints = commonMatches.reduce((sum, matchId) => sum + Number(predictions.find((p) => p.player_id === left?.id && p.match_id === matchId)?.points || 0), 0);
-  const rightCommonPoints = commonMatches.reduce((sum, matchId) => sum + Number(predictions.find((p) => p.player_id === right?.id && p.match_id === matchId)?.points || 0), 0);
+  const leftCommonPoints = commonMatches.reduce((sum, matchId) => {
+    const match = matches.find((m) => m.id === matchId);
+    const pred = predictions.find((p) => p.player_id === left?.id && p.match_id === matchId);
+    return sum + getPredictionCalculatedPoints(pred, match);
+  }, 0);
+  const rightCommonPoints = commonMatches.reduce((sum, matchId) => {
+    const match = matches.find((m) => m.id === matchId);
+    const pred = predictions.find((p) => p.player_id === right?.id && p.match_id === matchId);
+    return sum + getPredictionCalculatedPoints(pred, match);
+  }, 0);
 
   const pointDiff = Number(leftMetrics?.points || 0) - Number(rightMetrics?.points || 0);
   const leaderName = pointDiff === 0 ? "Berabere" : pointDiff > 0 ? left?.name : right?.name;
