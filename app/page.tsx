@@ -157,6 +157,14 @@ function getFootballDayRange(offsetDays = 0, baseDate = new Date()) {
   return { start, end };
 }
 
+function getSelectedFootballDayRange(dateString: string) {
+  const [year, month, day] = dateString.split("-").map(Number);
+  const start = new Date(year, month - 1, day, FOOTBALL_DAY_START_HOUR, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start, end };
+}
+
 
 function getPredictionCalculatedPoints(pred: Prediction | undefined | null, match: Match | undefined | null) {
   if (!pred) return 0;
@@ -180,6 +188,102 @@ function isPredictionCorrect(pred: Prediction | undefined | null, match: Match |
   const prediction = String(pred.prediction || "").trim();
   const result = String(match.result || "").trim();
   return prediction !== "YOK" && prediction !== "BILINMIYOR" && prediction === result;
+}
+
+function getPredictionPointLabel(pred: Prediction | undefined | null, match: Match | undefined | null) {
+  const points = getPredictionCalculatedPoints(pred, match);
+  return points > 0 ? `+${points}` : String(points);
+}
+
+function getPlayerFinishedPredictions(playerId: string, matches: Match[], predictions: Prediction[]) {
+  return predictions
+    .filter((pred) => pred.player_id === playerId)
+    .map((pred) => ({ ...pred, match: matches.find((m) => m.id === pred.match_id) }))
+    .filter((pred) => pred.match?.result)
+    .sort((a, b) => new Date(a.match!.match_time).getTime() - new Date(b.match!.match_time).getTime());
+}
+
+function getLastFiveForm(playerId: string, matches: Match[], predictions: Prediction[]) {
+  const finished = getPlayerFinishedPredictions(playerId, matches, predictions).slice(-5);
+
+  return finished.map((pred, index) => {
+    const match = pred.match!;
+    const points = getPredictionCalculatedPoints(pred, match);
+    const correct = isPredictionCorrect(pred, match);
+    const label = `${index + 1}. maç`;
+    const date = new Date(match.match_time).toLocaleDateString("tr-TR", { day: "2-digit", month: "short" });
+
+    return {
+      label,
+      date,
+      points,
+      correct,
+      prediction: pred.prediction,
+      result: match.result || "—",
+      is_joker: !!pred.is_joker,
+      matchName: `${match.home_team} - ${match.away_team}`,
+      icon: correct ? "✅" : points === 0 ? "➖" : "❌",
+    };
+  });
+}
+
+function getFormSummary(form: ReturnType<typeof getLastFiveForm>) {
+  const totalPoints = form.reduce((sum, item) => sum + item.points, 0);
+  const correct = form.filter((item) => item.correct).length;
+  const total = form.length;
+
+  if (total === 0) return { text: "Bekliyor", cls: "bg-slate-100 text-slate-500", note: "Henüz sonuçlanan maç yok" };
+  if (correct >= 4 || totalPoints >= 9) return { text: "Formda", cls: "bg-emerald-100 text-emerald-700", note: `${correct}/${total} doğru • ${totalPoints > 0 ? "+" : ""}${totalPoints} puan` };
+  if (correct <= 1 || totalPoints <= 0) return { text: "Düşüşte", cls: "bg-red-100 text-red-600", note: `${correct}/${total} doğru • ${totalPoints > 0 ? "+" : ""}${totalPoints} puan` };
+  return { text: "Dengeli", cls: "bg-amber-100 text-amber-700", note: `${correct}/${total} doğru • ${totalPoints > 0 ? "+" : ""}${totalPoints} puan` };
+}
+
+function getChampionLiveStatus(team: string | null | undefined, matches: Match[]) {
+  if (!team) return { text: "Seçilmedi", cls: "bg-slate-100 text-slate-500", detail: "Şampiyon tahmini yok" };
+
+  const knockoutStages = ["Son 32", "Son 16", "Çeyrek Final", "Yarı Final", "Final"];
+  const teamMatches = matches.filter((m) => m.home_team === team || m.away_team === team);
+  const finishedTeamMatches = teamMatches.filter((m) => m.result);
+  const finalMatch = matches.find((m) => (m.league || m.breakfast_round) === "Final" && m.result);
+
+  if (finalMatch) {
+    const champion = finalMatch.result === "1" ? finalMatch.home_team : finalMatch.result === "2" ? finalMatch.away_team : null;
+    if (champion === team) return { text: "Şampiyon", cls: "bg-yellow-100 text-yellow-700", detail: "Tahmin kupaya gitti 🏆" };
+  }
+
+  const lostKnockout = finishedTeamMatches.some((m) => {
+    const stage = m.league || m.breakfast_round || "";
+    if (!knockoutStages.includes(stage)) return false;
+    const teamIsHome = m.home_team === team;
+    const teamWon = (teamIsHome && m.result === "1") || (!teamIsHome && m.result === "2");
+    return !teamWon;
+  });
+
+  if (lostKnockout) return { text: "Elendi", cls: "bg-red-100 text-red-600", detail: "Şampiyon tahmini patladı" };
+
+  const groupMatches = teamMatches.filter((m) => m.league?.startsWith("Grup") && m.result);
+  const groupPoints = groupMatches.reduce((sum, m) => {
+    const teamIsHome = m.home_team === team;
+    const teamWon = (teamIsHome && m.result === "1") || (!teamIsHome && m.result === "2");
+    const draw = m.result === "X";
+    return sum + (teamWon ? 3 : draw ? 1 : 0);
+  }, 0);
+  const groupGoalDiff = groupMatches.reduce((sum, m) => {
+    const hs = Number(m.home_score || 0);
+    const as = Number(m.away_score || 0);
+    return sum + (m.home_team === team ? hs - as : as - hs);
+  }, 0);
+
+  if (groupMatches.length >= 2 && (groupPoints <= 1 || groupGoalDiff < -2)) {
+    return { text: "Riskli", cls: "bg-amber-100 text-amber-700", detail: `${groupPoints} grup puanı • averaj ${groupGoalDiff > 0 ? "+" : ""}${groupGoalDiff}` };
+  }
+
+  const hasUpcoming = teamMatches.some((m) => !m.result && new Date(m.match_time).getTime() > Date.now());
+  if (!hasUpcoming && teamMatches.length > 0 && finishedTeamMatches.length === teamMatches.length && groupMatches.length >= 3) {
+    return { text: "Riskli", cls: "bg-amber-100 text-amber-700", detail: "Grup sonrası durumu kontrol et" };
+  }
+
+  return { text: "Yaşıyor", cls: "bg-emerald-100 text-emerald-700", detail: groupMatches.length ? `${groupPoints} grup puanı • devam ediyor` : "Turnuvada devam ediyor" };
 }
 
 function getBreakfastLinePlayers(players: Player[]) {
@@ -584,10 +688,13 @@ export default function Home() {
   const [loginName, setLoginName] = useState("");
   const [activeTab, setActiveTab] = useState("dashboard");
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
 
   const [selectedStage, setSelectedStage] = useState("Tümü");
   const [predictionFilter, setPredictionFilter] = useState("Açık");
   const [matchListFilter, setMatchListFilter] = useState("Tümü");
+  const [selectedMatchDate, setSelectedMatchDate] = useState("");
   const [adminScoreSearch, setAdminScoreSearch] = useState("");
   const [adminScoreFilter, setAdminScoreFilter] = useState("Skor Bekleyenler");
 
@@ -611,14 +718,28 @@ export default function Home() {
   const [bonusInputs, setBonusInputs] = useState<Record<string, { playerId: string; points: string; reason: string }>>({});
 
   const loadData = async () => {
-    const { data: playersData } = await supabase.from("players").select("*");
-    const { data: matchesData } = await supabase.from("matches").select("*").order("match_time", { ascending: true });
-    const { data: predictionsData } = await supabase.from("predictions").select("*");
-    const { data: bonusData } = await supabase.from("bonus_logs").select("*").order("created_at", { ascending: false });
-    setPlayers(playersData || []);
-    setMatches(matchesData || []);
-    setPredictions(predictionsData || []);
-    setBonusLogs(bonusData || []);
+    try {
+      setRefreshing(true);
+
+      const { data: playersData } = await supabase.from("players").select("*");
+      const { data: matchesData } = await supabase
+        .from("matches")
+        .select("*")
+        .order("match_time", { ascending: true });
+      const { data: predictionsData } = await supabase.from("predictions").select("*");
+      const { data: bonusData } = await supabase
+        .from("bonus_logs")
+        .select("*")
+        .order("created_at", { ascending: false });
+
+      setPlayers(playersData || []);
+      setMatches(matchesData || []);
+      setPredictions(predictionsData || []);
+      setBonusLogs(bonusData || []);
+      setLastUpdatedAt(new Date());
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   useEffect(() => { loadData(); }, []);
@@ -736,7 +857,23 @@ export default function Home() {
   };
 
   const predictionMatches = useMemo(() => applyTimeFilter(filteredMatches, predictionFilter), [filteredMatches, predictionFilter]);
-  const matchListMatches = useMemo(() => applyTimeFilter(filteredMatches, matchListFilter), [filteredMatches, matchListFilter]);
+  const matchListMatches = useMemo(() => {
+    if (!selectedMatchDate) return applyTimeFilter(filteredMatches, matchListFilter);
+
+    const selectedRange = getSelectedFootballDayRange(selectedMatchDate);
+    const datedMatches = filteredMatches.filter((match) => {
+      const matchDate = new Date(match.match_time);
+      return matchDate >= selectedRange.start && matchDate < selectedRange.end;
+    });
+
+    // Tarih seçiliyken Bugün/Yarın yerine seçili futbol günü esas alınır.
+    // Açık/Başlayanlar filtreleri ise seçili tarih içinde ayrıca daraltma yapar.
+    if (matchListFilter === "Açık" || matchListFilter === "Başlayanlar") {
+      return applyTimeFilter(datedMatches, matchListFilter);
+    }
+
+    return datedMatches;
+  }, [filteredMatches, matchListFilter, selectedMatchDate]);
   const adminScoreMatches = useMemo(() => {
     const now = Date.now();
     const q = adminScoreSearch.trim().toLocaleLowerCase("tr-TR");
@@ -1193,6 +1330,13 @@ export default function Home() {
               className={`rounded-full px-4 py-2 text-sm font-black transition ${notificationsEnabled ? "bg-green-100 text-green-700" : "bg-red-100 text-red-600 hover:bg-red-200"}`}>
               {notificationsEnabled ? "🔔 Bildirim açık" : "🔕 Bildirim aç"}
             </button>
+            <button
+              onClick={loadData}
+              disabled={refreshing}
+              className={`rounded-full px-4 py-2 text-sm font-black transition ${refreshing ? "bg-slate-200 text-slate-500" : "bg-slate-900 text-white hover:bg-slate-700"}`}
+            >
+              {refreshing ? "⏳ Güncelleniyor..." : "🔄 Güncelle"}
+            </button>
             {currentPlayer.is_admin && (
               <button onClick={() => shareUpcomingMatches(matches)}
                 className="rounded-full bg-green-500 px-4 py-2 text-sm font-black text-white hover:bg-green-600 transition">
@@ -1208,6 +1352,11 @@ export default function Home() {
               </button>
             )}
             <button onClick={logout} className="rounded-full bg-red-500 px-4 py-2 text-sm font-black text-white">Çıkış</button>
+            {lastUpdatedAt && (
+              <div className="w-full text-xs font-bold text-slate-400">
+                Son güncelleme: {lastUpdatedAt.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              </div>
+            )}
           </div>
 
           <div className="mb-6 hidden flex-wrap gap-3 md:flex">
@@ -1254,6 +1403,8 @@ export default function Home() {
             </div>
 
             <StatsPanel players={players} matches={matches} predictions={predictions} />
+
+            <ChampionLiveStatus players={players} matches={matches} />
 
             <ScoreTable sortedPlayers={sortedPlayers} playerStreaks={playerStreaks}
               onProfile={(id) => { setProfilePlayerId(id); setActiveTab("profil"); }} />
@@ -1374,6 +1525,34 @@ export default function Home() {
             <h2 className="mb-6 text-xl font-black">⚽ Maçlar</h2>
             <FilterButtons value={matchListFilter} onChange={setMatchListFilter} />
 
+            <div className="mb-5 rounded-[1.5rem] border border-amber-100 bg-amber-50/50 p-4">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-black text-slate-700">📅 Tarihe göre filtrele</div>
+                  <div className="text-xs font-bold text-slate-500">Seçilen gün 06:00 - ertesi gün 05:59 arası kabul edilir.</div>
+                </div>
+                {selectedMatchDate && (
+                  <button
+                    onClick={() => setSelectedMatchDate("")}
+                    className="rounded-full bg-white px-4 py-2 text-xs font-black text-red-500 shadow-sm hover:bg-red-50"
+                  >
+                    Temizle
+                  </button>
+                )}
+              </div>
+              <input
+                type="date"
+                value={selectedMatchDate}
+                onChange={(e) => setSelectedMatchDate(e.target.value)}
+                className="w-full rounded-2xl border border-amber-100 bg-white p-3 font-black text-slate-700 outline-none md:max-w-xs"
+              />
+              {selectedMatchDate && (
+                <div className="mt-3 text-xs font-black text-amber-700">
+                  Seçili tarih filtresi aktif: {new Date(selectedMatchDate + "T12:00:00").toLocaleDateString("tr-TR", { day: "2-digit", month: "long", year: "numeric" })}
+                </div>
+              )}
+            </div>
+
             <div className="space-y-4">
               {matchListMatches.map((match) => {
                 const matchBonuses = bonusLogs.filter((b) => b.match_id === match.id);
@@ -1474,6 +1653,8 @@ export default function Home() {
               <StatBox title="BAŞARI" value={`%${profilePlayer.success_rate || 0}`} />
             </div>
 
+            <LastFiveFormCard player={profilePlayer} matches={matches} predictions={predictions} />
+
             <div className="mb-6 rounded-[1.75rem] border border-amber-100 bg-amber-50/50 p-5">
               <h3 className="mb-4 text-xl font-black">📊 Aşama Aşama</h3>
               <div style={{ height: 260 }}>
@@ -1490,9 +1671,12 @@ export default function Home() {
             </div>
 
             <div className="rounded-[1.75rem] border border-amber-100 bg-amber-50/50 p-5">
-              <h3 className="mb-4 text-xl font-black">📜 Son 10 Tahmin</h3>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <h3 className="text-xl font-black">📜 Tüm Tahmin Geçmişi</h3>
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-500">{profilePredictions.length} maç</span>
+              </div>
               <div className="space-y-2">
-                {profilePredictions.slice(0, 10).map((p) => (
+                {profilePredictions.map((p) => (
                   <div key={p.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-100 bg-white p-3">
                     <div>
                       <div className="font-black">
@@ -1503,7 +1687,7 @@ export default function Home() {
                     <div className="text-sm font-bold">Tahmin: {p.prediction}{p.is_joker ? " 🃏" : ""}</div>
                     <div className="text-sm font-bold">Sonuç: {p.match?.result || "—"}</div>
                     <div className="rounded-lg bg-slate-100 px-3 py-1 text-sm font-black">
-                      {p.match?.result ? `${p.points > 0 ? "+" : ""}${p.points}` : "Bekliyor"}
+                      {p.match?.result ? getPredictionPointLabel(p, p.match as Match) : "Bekliyor"}
                     </div>
                   </div>
                 ))}
@@ -1709,6 +1893,105 @@ export default function Home() {
 }
 
 // === COMPONENTLER ===
+
+
+function LastFiveFormCard({ player, matches, predictions }: { player: Player; matches: Match[]; predictions: Prediction[] }) {
+  const form = getLastFiveForm(player.id, matches, predictions);
+  const summary = getFormSummary(form);
+
+  return (
+    <div className="mb-6 rounded-[1.75rem] border border-amber-100 bg-white p-5 shadow-xl shadow-amber-100/50">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-xl font-black">📈 Son 5 Maç Form Grafiği</h3>
+          <p className="mt-1 text-sm font-bold text-slate-500">Sonuçlanan son 5 tahminden hesaplanır.</p>
+        </div>
+        <span className={`rounded-full px-3 py-1 text-xs font-black ${summary.cls}`}>{summary.text} • {summary.note}</span>
+      </div>
+
+      {form.length === 0 ? (
+        <div className="rounded-2xl bg-amber-50 p-4 text-sm font-bold text-slate-500">Henüz form grafiği için sonuçlanan maç yok 😄</div>
+      ) : (
+        <>
+          <div style={{ height: 240 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={form}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="label" stroke="#64748b" />
+                <YAxis stroke="#64748b" />
+                <Tooltip formatter={(value: any) => [`${Number(value) > 0 ? "+" : ""}${value} puan`, "Puan"]} labelFormatter={(label) => `${label}`} />
+                <Bar dataKey="points" fill="#f59e0b" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          <div className="mt-4 grid gap-2 md:grid-cols-5">
+            {form.map((item, idx) => (
+              <div key={`${player.id}-form-${idx}`} className="rounded-2xl border border-amber-100 bg-amber-50/60 p-3">
+                <div className="text-lg">{item.icon} {item.is_joker ? "🃏" : ""}</div>
+                <div className="mt-1 text-xs font-black text-slate-400">{item.date}</div>
+                <div className="mt-1 line-clamp-2 text-xs font-bold text-slate-600">{item.matchName}</div>
+                <div className="mt-2 text-sm font-black text-slate-900">{item.prediction} → {item.result}</div>
+                <div className={`mt-1 text-sm font-black ${item.points >= 0 ? "text-emerald-700" : "text-red-600"}`}>{item.points > 0 ? "+" : ""}{item.points} puan</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function ChampionLiveStatus({ players, matches }: { players: Player[]; matches: Match[] }) {
+  const grouped = useMemo(() => {
+    const map: Record<string, Player[]> = {};
+    players.forEach((player) => {
+      if (!player.champion_team || isPlaceholderTeamName(player.champion_team)) return;
+      if (!map[player.champion_team]) map[player.champion_team] = [];
+      map[player.champion_team].push(player);
+    });
+
+    return Object.entries(map)
+      .map(([team, pickers]) => ({ team, pickers, status: getChampionLiveStatus(team, matches) }))
+      .sort((a, b) => {
+        const order: Record<string, number> = { "Şampiyon": 0, "Yaşıyor": 1, "Riskli": 2, "Elendi": 3 };
+        const statusDiff = (order[a.status.text] ?? 9) - (order[b.status.text] ?? 9);
+        if (statusDiff !== 0) return statusDiff;
+        return b.pickers.length - a.pickers.length;
+      });
+  }, [players, matches]);
+
+  return (
+    <div className="mb-6 rounded-[2rem] border border-rose-100 bg-white p-5 shadow-xl shadow-red-100/50">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-xl font-black">🏆 Şampiyon Tahmini Canlı Durumu</h3>
+          <p className="mt-1 text-sm font-bold text-slate-500">Takımların durumu maç sonuçlarına göre otomatik yorumlanır.</p>
+        </div>
+        <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-black text-rose-700">{grouped.length} takım seçildi</span>
+      </div>
+
+      {grouped.length === 0 ? (
+        <div className="rounded-2xl bg-amber-50 p-4 text-sm font-bold text-slate-500">Henüz şampiyon tahmini yok.</div>
+      ) : (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {grouped.map(({ team, pickers, status }) => (
+            <div key={team} className="rounded-[1.5rem] border border-amber-100 bg-amber-50/50 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="text-lg font-black"><TeamName team={team} /></div>
+                <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${status.cls}`}>{status.text}</span>
+              </div>
+              <div className="mt-2 text-sm font-bold text-slate-500">{status.detail}</div>
+              <div className="mt-3 rounded-2xl bg-white p-3 text-sm font-black text-slate-700">
+                {pickers.map((p) => p.name).join(" • ")}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function StatsPanel({ players, matches, predictions }: { players: Player[]; matches: Match[]; predictions: Prediction[] }) {
   const stats = useMemo(() => computeStats(players, matches, predictions), [players, matches, predictions]);
