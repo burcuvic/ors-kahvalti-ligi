@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, createContext, useContext, useEffect, useMemo, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import {
   CartesianGrid,
@@ -66,6 +66,43 @@ type BonusLog = {
   points: number;
   reason: string | null;
   created_at: string;
+};
+
+type TeamStatusValue = "active" | "risk" | "eliminated" | "champion";
+
+type TeamStatus = {
+  id?: string;
+  team_name: string;
+  status: TeamStatusValue;
+  updated_at?: string | null;
+};
+
+type TeamStatusMap = Record<string, TeamStatusValue>;
+
+const TeamStatusContext = createContext<TeamStatusMap>({});
+
+const normalizeTeamName = (team?: string | null) =>
+  String(team || "").trim().toLocaleLowerCase("tr-TR");
+
+const TEAM_STATUS_LABELS: Record<TeamStatusValue, string> = {
+  active: "Devam ediyor",
+  risk: "Riskli",
+  eliminated: "Elendi",
+  champion: "Şampiyon",
+};
+
+const TEAM_STATUS_EMOJIS: Record<TeamStatusValue, string> = {
+  active: "✅",
+  risk: "⚠️",
+  eliminated: "❌",
+  champion: "🏆",
+};
+
+const TEAM_STATUS_STYLES: Record<TeamStatusValue, string> = {
+  active: "bg-green-100 text-green-700 border-green-200",
+  risk: "bg-amber-100 text-amber-700 border-amber-200",
+  eliminated: "bg-slate-200 text-slate-500 border-slate-300",
+  champion: "bg-yellow-100 text-yellow-800 border-yellow-300",
 };
 
 const STAGES = [
@@ -136,20 +173,48 @@ function flagUrl(team: string) {
   return code ? `https://flagcdn.com/w40/${code}.png` : "";
 }
 
-function TeamName({ team }: { team: string }) {
+function TeamName({
+  team,
+  showStatus = false,
+}: {
+  team: string;
+  showStatus?: boolean;
+}) {
   const url = flagUrl(team);
+  const teamStatuses = useContext(TeamStatusContext);
+  const status = teamStatuses[normalizeTeamName(team)] || "active";
+  const eliminated = status === "eliminated";
+  const risk = status === "risk";
+  const champion = status === "champion";
+
   return (
-    <span className="inline-flex items-center justify-center gap-2">
+    <span
+      className={`inline-flex items-center justify-center gap-2 ${
+        eliminated ? "opacity-45 grayscale" : ""
+      }`}
+      title={`${team} - ${TEAM_STATUS_LABELS[status]}`}
+    >
       {url ? (
         <img
           src={url}
           alt={team}
-          className="h-4 w-6 rounded-[3px] object-cover shadow-sm"
+          className={`h-4 w-6 rounded-[3px] object-cover shadow-sm ${
+            eliminated ? "grayscale" : ""
+          }`}
         />
       ) : (
         <span className="text-sm">🏳️</span>
       )}
-      <span>{team}</span>
+      <span className={eliminated ? "line-through decoration-2" : ""}>
+        {team}
+      </span>
+      {(showStatus || eliminated || risk || champion) && (
+        <span
+          className={`rounded-full border px-2 py-0.5 text-[10px] font-black ${TEAM_STATUS_STYLES[status]}`}
+        >
+          {TEAM_STATUS_EMOJIS[status]} {TEAM_STATUS_LABELS[status]}
+        </span>
+      )}
     </span>
   );
 }
@@ -1143,6 +1208,7 @@ export default function Home() {
   const [matches, setMatches] = useState<Match[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [bonusLogs, setBonusLogs] = useState<BonusLog[]>([]);
+  const [teamStatuses, setTeamStatuses] = useState<TeamStatus[]>([]);
 
   const [currentPlayer, setCurrentPlayer] = useState<Player | null>(null);
   const [loginName, setLoginName] = useState("");
@@ -1198,11 +1264,16 @@ export default function Home() {
         .from("bonus_logs")
         .select("*")
         .order("created_at", { ascending: false });
+      const { data: teamStatusData } = await supabase
+        .from("team_statuses")
+        .select("*")
+        .order("team_name", { ascending: true });
 
       setPlayers(playersData || []);
       setMatches(matchesData || []);
       setPredictions(predictionsData || []);
       setBonusLogs(bonusData || []);
+      setTeamStatuses((teamStatusData || []) as TeamStatus[]);
       setLastUpdatedAt(new Date());
     } finally {
       setRefreshing(false);
@@ -1365,6 +1436,18 @@ export default function Home() {
     });
     return Array.from(teams).sort((a, b) => a.localeCompare(b, "tr"));
   }, [matches]);
+
+  const teamStatusMap = useMemo(() => {
+    const map: TeamStatusMap = {};
+    teamStatuses.forEach((item) => {
+      if (!item.team_name) return;
+      map[normalizeTeamName(item.team_name)] = item.status || "active";
+    });
+    return map;
+  }, [teamStatuses]);
+
+  const getTeamStatusValue = (team: string) =>
+    teamStatusMap[normalizeTeamName(team)] || "active";
 
   const filteredMatches = useMemo(() => {
     if (selectedStage === "Tümü") return matches;
@@ -1970,6 +2053,41 @@ export default function Home() {
     alert(`${added} maç yüklendi 😄`);
   };
 
+  const saveTeamStatus = async (teamName: string, status: TeamStatusValue) => {
+    if (!teamName.trim()) return;
+
+    const { error } = await supabase.from("team_statuses").upsert(
+      {
+        team_name: teamName.trim(),
+        status,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "team_name" },
+    );
+
+    if (error) {
+      alert(error.message);
+      return;
+    }
+
+    setTeamStatuses((prev) => {
+      const exists = prev.some(
+        (item) => normalizeTeamName(item.team_name) === normalizeTeamName(teamName),
+      );
+      if (exists) {
+        return prev.map((item) =>
+          normalizeTeamName(item.team_name) === normalizeTeamName(teamName)
+            ? { ...item, status, updated_at: new Date().toISOString() }
+            : item,
+        );
+      }
+      return [
+        ...prev,
+        { team_name: teamName.trim(), status, updated_at: new Date().toISOString() },
+      ];
+    });
+  };
+
   const addMatch = async () => {
     if (!currentPlayer?.is_admin || !adminUnlocked) return;
     if (!homeTeam || !awayTeam || !matchTime || !league) {
@@ -2067,7 +2185,8 @@ export default function Home() {
       ];
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#FFF7E8] text-slate-900">
+    <TeamStatusContext.Provider value={teamStatusMap}>
+      <main className="relative min-h-screen overflow-hidden bg-[#FFF7E8] text-slate-900">
       <div className="pointer-events-none fixed left-[-10rem] top-[-10rem] h-96 w-96 rounded-full bg-amber-300/40 blur-3xl" />
       <div className="pointer-events-none fixed right-[-12rem] top-32 h-[28rem] w-[28rem] rounded-full bg-red-300/30 blur-3xl" />
       <div className="pointer-events-none fixed bottom-[-12rem] left-1/3 h-[24rem] w-[24rem] rounded-full bg-orange-200/50 blur-3xl" />
@@ -2818,6 +2937,54 @@ export default function Home() {
                   </div>
                 </div>
 
+                <div className="mb-6 rounded-[1.75rem] border border-slate-200 bg-slate-50 p-5">
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-xl font-black">
+                        🚦 Takım Durumu Yönetimi
+                      </h3>
+                      <p className="text-sm font-bold text-slate-500">
+                        Eleneni seçersen uygulamanın her yerinde gri görünür.
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-500">
+                      {tournamentTeams.length} takım
+                    </span>
+                  </div>
+
+                  <div className="grid max-h-[28rem] gap-2 overflow-y-auto pr-1 md:grid-cols-2">
+                    {tournamentTeams.map((team) => {
+                      const currentStatus = getTeamStatusValue(team);
+                      return (
+                        <div
+                          key={team}
+                          className={`flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-white p-3 ${
+                            currentStatus === "eliminated"
+                              ? "border-slate-200 bg-slate-100"
+                              : "border-amber-100"
+                          }`}
+                        >
+                          <div className="min-w-0 font-black">
+                            <TeamName team={team} showStatus />
+                          </div>
+                          <select
+                            value={currentStatus}
+                            onChange={(e) =>
+                              saveTeamStatus(team, e.target.value as TeamStatusValue)
+                            }
+                            className="rounded-xl border border-amber-100 bg-amber-50/50 p-2 text-sm font-black outline-none"
+                          >
+                            <option value="active">✅ Devam ediyor</option>
+                            <option value="risk">⚠️ Riskli</option>
+                            <option value="eliminated">❌ Elendi</option>
+                            <option value="champion">🏆 Şampiyon</option>
+                          </select>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div className="mb-6 rounded-[1.75rem] border border-amber-100 bg-amber-50/50 p-5">
                   <h3 className="mb-4 text-xl font-black">
                     📂 Toplu Maç Yükle
@@ -3080,7 +3247,8 @@ export default function Home() {
         setActiveTab={setActiveTab}
         isAdmin={!!currentPlayer.is_admin}
       />
-    </main>
+      </main>
+    </TeamStatusContext.Provider>
   );
 }
 
@@ -3178,6 +3346,34 @@ function ChampionLiveStatus({
   players: Player[];
   matches: Match[];
 }) {
+  const teamStatusMap = useContext(TeamStatusContext);
+
+  const getManualChampionStatus = (team: string) => {
+    const manualStatus = teamStatusMap[normalizeTeamName(team)] || "active";
+    if (manualStatus === "eliminated") {
+      return {
+        text: "Elendi",
+        cls: "bg-slate-200 text-slate-600",
+        detail: "Admin tarafından elendi olarak işaretlendi 🧨",
+      };
+    }
+    if (manualStatus === "risk") {
+      return {
+        text: "Riskli",
+        cls: "bg-amber-100 text-amber-700",
+        detail: "Admin tarafından riskli olarak işaretlendi ⚠️",
+      };
+    }
+    if (manualStatus === "champion") {
+      return {
+        text: "Şampiyon",
+        cls: "bg-yellow-100 text-yellow-800",
+        detail: "Admin tarafından şampiyon olarak işaretlendi 🏆",
+      };
+    }
+    return getChampionLiveStatus(team, matches);
+  };
+
   const grouped = useMemo(() => {
     const map: Record<string, Player[]> = {};
     players.forEach((player) => {
@@ -3191,7 +3387,7 @@ function ChampionLiveStatus({
       .map(([team, pickers]) => ({
         team,
         pickers,
-        status: getChampionLiveStatus(team, matches),
+        status: getManualChampionStatus(team),
       }))
       .sort((a, b) => {
         const order: Record<string, number> = {
@@ -3205,7 +3401,7 @@ function ChampionLiveStatus({
         if (statusDiff !== 0) return statusDiff;
         return b.pickers.length - a.pickers.length;
       });
-  }, [players, matches]);
+  }, [players, matches, teamStatusMap]);
 
   return (
     <div className="mb-6 rounded-[2rem] border border-rose-100 bg-white p-5 shadow-xl shadow-red-100/50">
@@ -3215,7 +3411,7 @@ function ChampionLiveStatus({
             🏆 Şampiyon Tahmini Canlı Durumu
           </h3>
           <p className="mt-1 text-sm font-bold text-slate-500">
-            Takımların durumu maç sonuçlarına göre otomatik yorumlanır.
+            Takımların durumu admin seçimi ve maç sonuçlarına göre yorumlanır.
           </p>
         </div>
         <span className="rounded-full bg-rose-100 px-3 py-1 text-xs font-black text-rose-700">
