@@ -1588,8 +1588,62 @@ export default function Home() {
     return scores;
   }, [players, predictions, matches]);
 
+  const calculatedPlayers = useMemo(() => {
+    const finishedMatches = matches.filter((match) => !!match.result);
+
+    return players.map((player) => {
+      let correctCount = 0;
+      let wrongCount = 0;
+      let blankCount = 0;
+      let predictionPoints = 0;
+
+      finishedMatches.forEach((match) => {
+        const pred = predictions.find(
+          (p) => p.player_id === player.id && p.match_id === match.id,
+        );
+
+        const guess = String(pred?.prediction || "").trim();
+        const result = String(match.result || "").trim();
+
+        if (!pred || guess === "" || guess === "YOK") {
+          blankCount += 1;
+          predictionPoints -= 3;
+          return;
+        }
+
+        if (guess === "BILINMIYOR") {
+          blankCount += 1;
+          return;
+        }
+
+        const calculatedPoint = getPredictionCalculatedPoints(pred, match);
+        predictionPoints += calculatedPoint;
+
+        if (guess === result) correctCount += 1;
+        else wrongCount += 1;
+      });
+
+      const bonusPoints = Number(player.bonus_points || 0);
+      const totalAnswered = correctCount + wrongCount;
+      const successRate =
+        totalAnswered > 0
+          ? Number(((correctCount / totalAnswered) * 100).toFixed(1))
+          : 0;
+
+      return {
+        ...player,
+        correct_count: correctCount,
+        wrong_count: wrongCount,
+        intentional_blank: blankCount,
+        bonus_points: bonusPoints,
+        total_points: predictionPoints + bonusPoints,
+        success_rate: successRate,
+      };
+    });
+  }, [players, matches, predictions]);
+
   const sortedPlayers = useMemo(() => {
-    return [...players].sort((a, b) => {
+    return [...calculatedPlayers].sort((a, b) => {
       const pointsDiff =
         Number(b.total_points || 0) - Number(a.total_points || 0);
       if (pointsDiff !== 0) return pointsDiff;
@@ -1619,7 +1673,7 @@ export default function Home() {
 
       return a.name.localeCompare(b.name, "tr");
     });
-  }, [players, playerStreaks, jokerScores]);
+  }, [calculatedPlayers, playerStreaks, jokerScores]);
 
   const breakfastLinePlayers = useMemo(
     () => getBreakfastLinePlayers(players),
