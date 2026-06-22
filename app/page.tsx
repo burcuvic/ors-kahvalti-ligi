@@ -1583,7 +1583,7 @@ export default function Home() {
           pred.prediction !== "BILINMIYOR"
         );
       }).length;
-      scores[player.id] = jokerCorrect * 2 - jokerWrong;
+      scores[player.id] = jokerCorrect * 3 - jokerWrong;
     });
     return scores;
   }, [players, predictions, matches]);
@@ -2305,7 +2305,6 @@ export default function Home() {
                 </button>
               )}
             </div>
-            <MatchdayBanner matches={matches} />
 
             <div className="mb-6 grid gap-3 md:grid-cols-3">
               <MiniDashboardCard
@@ -2344,7 +2343,7 @@ export default function Home() {
                 <div>
                   <h3 className="text-xl font-black">🏅 Puan Tablosu</h3>
                   <p className="mt-1 text-sm font-bold text-slate-500">
-                    Genel sıralama, başarı oranı, seri ve joker kazanma sayısı.
+                    Genel sıralama, başarı oranı, seri, joker kazanma/patlama sayısı ve joker ek puanı.
                   </p>
                 </div>
                 <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-black text-amber-700">
@@ -2494,8 +2493,8 @@ export default function Home() {
                           })}
                         </div>
                         <div className="rounded-2xl border border-purple-100 bg-purple-50 px-3 py-2 text-xs font-bold text-purple-700">
-                          🃏 Joker kuralı: Her aşamada 1 hak. Doğru joker +6,
-                          yanlış joker -2.
+                          🃏 Joker kuralı: Her aşamada 1 hak. Doğru joker: normal +3 + joker ekstra +3 = toplam +6,
+                          yanlış joker: normal -1 + joker ekstra -1 = toplam -2.
                           {!isGroupStageMatch(match) &&
                             " Eleme maçlarında beraberlik seçeneği yok."}
                         </div>
@@ -4049,48 +4048,6 @@ function FilterButtons({
           {filter}
         </button>
       ))}
-    </div>
-  );
-}
-
-function MatchdayBanner({ matches }: { matches: Match[] }) {
-  const todayMatches = matches
-    .filter((match) => {
-      const now = new Date();
-      const matchDate = new Date(match.match_time);
-      const today = new Date(now);
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(today.getDate() + 1);
-      return matchDate >= today && matchDate < tomorrow;
-    })
-    .sort(
-      (a, b) =>
-        new Date(a.match_time).getTime() - new Date(b.match_time).getTime(),
-    );
-  if (todayMatches.length === 0) return null;
-  const firstMatch = todayMatches[0];
-  return (
-    <div className="mb-6 overflow-hidden rounded-[1.75rem] border-2 border-orange-200 bg-gradient-to-r from-orange-400 via-red-400 to-pink-400 p-[2px] shadow-xl shadow-orange-100">
-      <div className="rounded-[1.6rem] bg-white p-4 md:p-5">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-red-100 px-3 py-1 text-xs font-black uppercase tracking-wide text-red-600">
-              🔥 Matchday
-            </div>
-            <h3 className="text-2xl font-black text-slate-950">
-              Bugün {todayMatches.length} maç var
-            </h3>
-            <p className="mt-1 font-bold text-slate-500">
-              İlk maç:{" "}
-              <span className="text-red-500">
-                {firstMatch.home_team} vs {firstMatch.away_team}
-              </span>
-            </p>
-          </div>
-          <div className="hidden text-6xl md:block">⚽🔥</div>
-        </div>
-      </div>
     </div>
   );
 }
@@ -6146,7 +6103,7 @@ function RulesPage() {
         </RuleCard>
 
         <RuleCard icon="🃏" title="Joker Hakkı">
-          Her aşamada 1 joker hakkı vardır. Jokerli tahmin doğru çıkarsa +6,
+          Her aşamada 1 joker hakkı vardır. Jokerli tahmin doğru çıkarsa normal +3 puanın üstüne ekstra +3 gelir,
           yanlış çıkarsa -2 puan yazılır. Joker strateji işidir; gönlünün değil,
           aklının sesini dinle 😄
         </RuleCard>
@@ -6274,22 +6231,33 @@ function ScoreTable({
   predictions: Prediction[];
   onProfile: (id: string) => void;
 }) {
-  const jokerWinCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
+  const jokerStatsByPlayer = useMemo(() => {
+    const stats: Record<string, { won: number; busted: number; extraPoints: number }> = {};
     predictions.forEach((prediction) => {
       if (!prediction.is_joker) return;
       const match = matches.find((m) => m.id === prediction.match_id);
       if (!match?.result) return;
-      if (String(prediction.prediction || "").trim() === String(match.result || "").trim()) {
-        counts[prediction.player_id] = (counts[prediction.player_id] || 0) + 1;
+
+      const playerStats = stats[prediction.player_id] || { won: 0, busted: 0, extraPoints: 0 };
+      const guess = String(prediction.prediction || "").trim();
+      const result = String(match.result || "").trim();
+
+      if (guess === result) {
+        playerStats.won += 1;
+        playerStats.extraPoints += 3;
+      } else {
+        playerStats.busted += 1;
+        playerStats.extraPoints -= 1;
       }
+
+      stats[prediction.player_id] = playerStats;
     });
-    return counts;
+    return stats;
   }, [matches, predictions]);
 
   return (
     <div className="overflow-auto">
-      <table className="w-full min-w-[1050px]">
+      <table className="w-full min-w-[1250px]">
         <thead>
           <tr className="border-b border-amber-100 text-left text-slate-500">
             <th className="pb-3">#</th>
@@ -6301,6 +6269,8 @@ function ScoreTable({
             <th className="pb-3">Puan</th>
             <th className="pb-3">Başarı</th>
             <th className="pb-3">Joker Kazandı</th>
+            <th className="pb-3">Joker Patladı</th>
+            <th className="pb-3">Joker Ek Puan</th>
             <th className="pb-3">Streak</th>
             <th className="pb-3">Şampiyon</th>
           </tr>
@@ -6341,7 +6311,14 @@ function ScoreTable({
               </td>
               <td className="py-3 font-black">%{p.success_rate || 0}</td>
               <td className="py-3 font-black text-purple-600">
-                🃏 {jokerWinCounts[p.id] || 0}
+                🃏 {jokerStatsByPlayer[p.id]?.won || 0}
+              </td>
+              <td className="py-3 font-black text-rose-600">
+                💥 {jokerStatsByPlayer[p.id]?.busted || 0}
+              </td>
+              <td className={`py-3 font-black ${(jokerStatsByPlayer[p.id]?.extraPoints || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                {(jokerStatsByPlayer[p.id]?.extraPoints || 0) > 0 ? "+" : ""}
+                {jokerStatsByPlayer[p.id]?.extraPoints || 0}
               </td>
               <td className="py-3 font-black">
                 {(playerStreaks[p.id] || 0) >= 5
