@@ -418,6 +418,7 @@ export default function Page() {
   const [selectedWeek, setSelectedWeek] = useState<number>(1);
   const [leagueFilter, setLeagueFilter] = useState("Tümü");
   const [typeFilter, setTypeFilter] = useState("Tümü");
+  const [predictionStatusFilter, setPredictionStatusFilter] = useState("Tümü");
 
   const activeSeason = useMemo(
     () => seasons.find((s) => s.is_active) || seasons[0],
@@ -905,6 +906,8 @@ export default function Page() {
                     setLeagueFilter={setLeagueFilter}
                     typeFilter={typeFilter}
                     setTypeFilter={setTypeFilter}
+                    predictionStatusFilter={predictionStatusFilter}
+                    setPredictionStatusFilter={setPredictionStatusFilter}
                     visibleMatches={visibleMatches}
                     predictions={currentScorePredictions}
                     savePrediction={savePrediction}
@@ -921,6 +924,8 @@ export default function Page() {
                     setLeagueFilter={setLeagueFilter}
                     typeFilter={typeFilter}
                     setTypeFilter={setTypeFilter}
+                    predictionStatusFilter={predictionStatusFilter}
+                    setPredictionStatusFilter={setPredictionStatusFilter}
                     visibleMatches={visibleMatches}
                     players={activePlayers}
                     predictions={currentScorePredictions}
@@ -1047,9 +1052,9 @@ function InfoCard({ title, value, note }: any) {
   );
 }
 
-function Filters({ selectedWeek, setSelectedWeek, weeks, leagueFilter, setLeagueFilter, typeFilter, setTypeFilter }: any) {
+function Filters({ selectedWeek, setSelectedWeek, weeks, leagueFilter, setLeagueFilter, typeFilter, setTypeFilter, predictionStatusFilter, setPredictionStatusFilter, showPredictionStatus = false }: any) {
   return (
-    <div className="mb-4 flex flex-wrap gap-2 rounded-[2rem] bg-white p-3 shadow ring-1 ring-orange-100">
+    <div className="mb-4 grid gap-2 rounded-[2rem] bg-white p-3 shadow ring-1 ring-orange-100 md:grid-cols-4">
       <select value={selectedWeek} onChange={(e) => setSelectedWeek(Number(e.target.value))} className="rounded-2xl border border-slate-200 px-3 py-2 text-sm font-bold">
         {weeks.map((w: number) => <option key={w} value={w}>Hafta {w}</option>)}
       </select>
@@ -1061,34 +1066,120 @@ function Filters({ selectedWeek, setSelectedWeek, weeks, leagueFilter, setLeague
         <option>Tümü</option>
         {MATCH_TYPES.map((l) => <option key={l}>{l}</option>)}
       </select>
+      {showPredictionStatus ? (
+        <select value={predictionStatusFilter} onChange={(e) => setPredictionStatusFilter(e.target.value)} className="rounded-2xl border border-slate-200 px-3 py-2 text-sm font-bold">
+          <option>Tümü</option>
+          <option>Tahmin yapıldı</option>
+          <option>Tahmin bekliyor</option>
+          <option>Kilitlendi</option>
+        </select>
+      ) : null}
+    </div>
+  );
+}
+
+function predictionCardStatus(match: Match, prediction?: ScorePrediction) {
+  if (isStarted(match)) return "Kilitlendi";
+  if (prediction) return "Tahmin yapıldı";
+  return "Tahmin bekliyor";
+}
+
+function formatDayHeader(value: string) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "Tarih yok";
+  return d.toLocaleDateString("tr-TR", { weekday: "long", day: "numeric", month: "long" });
+}
+
+function groupMatchesByDay(matches: Match[]) {
+  return matches.reduce((acc: Record<string, Match[]>, match) => {
+    const key = formatDayHeader(match.match_time);
+    acc[key] = acc[key] || [];
+    acc[key].push(match);
+    return acc;
+  }, {});
+}
+
+function StatMiniCard({ icon, value, label }: any) {
+  return (
+    <div className="rounded-[1.5rem] bg-white p-4 text-center shadow ring-1 ring-orange-100">
+      <div className="text-xl">{icon}</div>
+      <div className="mt-1 text-2xl font-black text-slate-900">{value}</div>
+      <div className="text-xs font-black uppercase tracking-wide text-slate-400">{label}</div>
     </div>
   );
 }
 
 function PredictTab(props: any) {
-  const { isArchive, isClosed, currentPlayer, favoriteComplete, visibleMatches, predictions, savePrediction, activeMatches, leagueTeams } = props;
+  const { isArchive, isClosed, currentPlayer, favoriteComplete, visibleMatches, predictions, savePrediction, activeMatches, leagueTeams, predictionStatusFilter } = props;
   if (isArchive) return <Notice title="Arşiv sezonu" text="Bu sezon kapalı. Eski tahminler Maçlar ekranında görüntülenir." />;
   if (!currentPlayer) return <Notice title="Giriş gerekli" text="Tahmin yapmak için oyuncu girişi yapmalısın." />;
   if (isClosed) return <Notice title="Sezon kapalı" text="Sezon kapatıldığı için yeni tahmin alınmıyor." />;
   if (!favoriteComplete) return <Notice title="Favoriler eksik" text="Tahmin ekranı açılmadan önce Profil sekmesinden zorunlu lig favorilerini seçmelisin." />;
 
-  const weekJoker = predictions.find((p: ScorePrediction) => {
-    const match = activeMatches.find((m: Match) => m.id === p.match_id);
-    return p.player_id === currentPlayer.id && p.is_joker && match && Number(match.week_no || 1) === props.selectedWeek;
+  const weekMatches = activeMatches
+    .filter((m: Match) => m.is_published !== false)
+    .filter((m: Match) => Number(m.week_no || 1) === props.selectedWeek);
+
+  const myWeekPredictions = predictions.filter((p: ScorePrediction) => {
+    const match = weekMatches.find((m: Match) => m.id === p.match_id);
+    return p.player_id === currentPlayer.id && Boolean(match);
   });
+
+  const weekJoker = myWeekPredictions.find((p: ScorePrediction) => p.is_joker);
+  const predictedCount = myWeekPredictions.length;
+  const missingCount = Math.max(weekMatches.length - predictedCount, 0);
+
+  const displayMatches = visibleMatches.filter((match: Match) => {
+    if (!predictionStatusFilter || predictionStatusFilter === "Tümü") return true;
+    const pred = predictions.find((p: ScorePrediction) => p.player_id === currentPlayer.id && p.match_id === match.id);
+    return predictionCardStatus(match, pred) === predictionStatusFilter;
+  });
+
+  const grouped = groupMatchesByDay(displayMatches);
 
   return (
     <div>
-      <Filters {...props} />
-      <div className="mb-4 rounded-[2rem] bg-white p-4 shadow ring-1 ring-orange-100">
-        <div className="font-black">🃏 Haftalık joker: {weekJoker ? "Kullanıldı" : "Kullanılmadı"}</div>
-        <div className="text-sm text-slate-500">Jokeri maç başlamadan başka maça taşıyabilirsin. Haftada 1 joker var, kullanılmazsa yanar.</div>
-      </div>
-      <div className="grid gap-4 lg:grid-cols-2">
-        {visibleMatches.map((match: Match) => (
-          <PredictionCard key={match.id} match={match} prediction={predictions.find((p: ScorePrediction) => p.player_id === currentPlayer.id && p.match_id === match.id)} savePrediction={savePrediction} leagueTeams={leagueTeams} />
+      <Filters {...props} showPredictionStatus />
+
+      <section className="mb-4 rounded-[2rem] bg-gradient-to-br from-orange-50 to-white p-5 shadow ring-1 ring-orange-100">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-black text-slate-900">Hafta {props.selectedWeek} Tahmin Durumu</h2>
+            <p className="mt-1 text-sm text-slate-500">Maç başlamadan skorunu değiştir, jokerini başka maça taşı.</p>
+          </div>
+          <span className={cx("rounded-2xl px-3 py-1 text-xs font-black", weekJoker ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-600")}>🃏 Joker {weekJoker ? "Kullanıldı" : "Kullanılmadı"}</span>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+          <StatMiniCard icon="⚽" value={weekMatches.length} label="Maç" />
+          <StatMiniCard icon="✅" value={predictedCount} label="Tahmin" />
+          <StatMiniCard icon="⚠️" value={missingCount} label="Eksik" />
+          <StatMiniCard icon="🃏" value={weekJoker ? "Var" : "Yok"} label="Joker" />
+        </div>
+        {missingCount > 0 ? (
+          <div className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800 ring-1 ring-amber-100">
+            ⚠️ Bu hafta {missingCount} maç için tahminin eksik.
+          </div>
+        ) : (
+          <div className="mt-4 rounded-2xl bg-green-50 px-4 py-3 text-sm font-bold text-green-700 ring-1 ring-green-100">
+            ✅ Bu haftanın tüm tahminleri tamam. Kahvaltı kupası kokusu geldi.
+          </div>
+        )}
+      </section>
+
+      <div className="grid gap-5">
+        {Object.entries(grouped).map(([day, matches]) => (
+          <section key={day} className="grid gap-3">
+            <h3 className="px-1 text-sm font-black uppercase tracking-wide text-slate-500">📅 {day}</h3>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {(matches as Match[]).map((match: Match) => (
+                <PredictionCard key={match.id} match={match} prediction={predictions.find((p: ScorePrediction) => p.player_id === currentPlayer.id && p.match_id === match.id)} savePrediction={savePrediction} leagueTeams={leagueTeams} />
+              ))}
+            </div>
+          </section>
         ))}
       </div>
+
+      {displayMatches.length === 0 ? <Notice title="Maç bulunamadı" text="Seçili filtrelerde gösterilecek maç yok." /> : null}
     </div>
   );
 }
@@ -1098,9 +1189,12 @@ function PredictionCard({ match, prediction, savePrediction, leagueTeams }: any)
   const [away, setAway] = useState<number>(prediction?.away_goals ?? 0);
   const [advancing, setAdvancing] = useState<string>(prediction?.advancing_team || "");
   const [joker, setJoker] = useState<boolean>(Boolean(prediction?.is_joker));
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
   const locked = isStarted(match);
   const homeTeamLook = findTeam(leagueTeams || [], match.home_team, match.league);
   const awayTeamLook = findTeam(leagueTeams || [], match.away_team, match.league);
+  const status = predictionCardStatus(match, prediction);
 
   useEffect(() => {
     setHome(prediction?.home_goals ?? 0);
@@ -1116,35 +1210,52 @@ function PredictionCard({ match, prediction, savePrediction, leagueTeams }: any)
     savePrediction(match, h, a, advancing || null, joker);
   }
 
+  function saveCurrent(nextJoker = joker) {
+    savePrediction(match, home, away, advancing || null, nextJoker);
+  }
+
   return (
-    <div className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100">
+    <div className="rounded-[2rem] bg-white p-4 shadow-xl ring-1 ring-orange-100">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-xs font-black uppercase text-orange-400">Hafta {match.week_no || 1} • {match.league || "Lig yok"} • {match.match_type || "Normal"}</div>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
+        <div className="min-w-0">
+          <div className="text-[11px] font-black uppercase text-orange-400">Hafta {match.week_no || 1} • {match.league || "Lig yok"} • {match.match_type || "Normal"}</div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
             <TeamPill team={homeTeamLook} name={match.home_team} />
             <span className="font-black text-slate-400">-</span>
             <TeamPill team={awayTeamLook} name={match.away_team} />
           </div>
-          <div className="text-sm text-slate-500">{formatDate(match.match_time)}</div>
+          <div className="mt-1 text-xs font-semibold text-slate-500">{formatDate(match.match_time)}</div>
         </div>
-        <span className={cx("rounded-2xl px-3 py-1 text-xs font-black", locked ? "bg-slate-200 text-slate-500" : "bg-green-100 text-green-700")}>{locked ? "Kilitli" : "Açık"}</span>
+        <span className={cx(
+          "shrink-0 rounded-2xl px-2.5 py-1 text-[11px] font-black",
+          status === "Kilitlendi" && "bg-slate-200 text-slate-600",
+          status === "Tahmin yapıldı" && "bg-green-100 text-green-700",
+          status === "Tahmin bekliyor" && "bg-amber-100 text-amber-700",
+        )}>
+          {status === "Kilitlendi" ? "🔒 Tahmin kapandı" : status === "Tahmin yapıldı" ? "✅ Tahmin kaydedildi" : "⚠️ Tahmin bekliyor"}
+        </span>
       </div>
 
-      <div className="mt-5 flex items-center justify-center gap-3">
-        <select disabled={locked} value={home} onChange={(e) => setHome(Number(e.target.value))} className="h-14 w-20 rounded-2xl border border-slate-200 text-center text-2xl font-black">
-          {GOAL_OPTIONS.map((g) => <option key={g} value={g}>{g}</option>)}
-        </select>
-        <span className="text-2xl font-black">-</span>
-        <select disabled={locked} value={away} onChange={(e) => setAway(Number(e.target.value))} className="h-14 w-20 rounded-2xl border border-slate-200 text-center text-2xl font-black">
-          {GOAL_OPTIONS.map((g) => <option key={g} value={g}>{g}</option>)}
-        </select>
+      <div className="mt-4 grid items-center gap-3 md:grid-cols-[1fr_auto_1fr]">
+        <div className="flex items-center justify-between gap-2 rounded-2xl bg-slate-50 p-2 md:justify-end">
+          <span className="truncate text-xs font-black text-slate-600 md:max-w-[130px]">{match.home_team}</span>
+          <select disabled={locked} value={home} onChange={(e) => setHome(Number(e.target.value))} className="h-11 w-16 rounded-2xl border border-slate-200 bg-white text-center text-lg font-black disabled:bg-slate-100">
+            {GOAL_OPTIONS.map((g) => <option key={g} value={g}>{g}</option>)}
+          </select>
+        </div>
+        <span className="hidden text-lg font-black text-slate-400 md:block">-</span>
+        <div className="flex items-center justify-between gap-2 rounded-2xl bg-slate-50 p-2">
+          <select disabled={locked} value={away} onChange={(e) => setAway(Number(e.target.value))} className="h-11 w-16 rounded-2xl border border-slate-200 bg-white text-center text-lg font-black disabled:bg-slate-100">
+            {GOAL_OPTIONS.map((g) => <option key={g} value={g}>{g}</option>)}
+          </select>
+          <span className="truncate text-xs font-black text-slate-600 md:max-w-[130px]">{match.away_team}</span>
+        </div>
       </div>
 
       {match.is_knockout && match.tie_leg !== "first" ? (
-        <div className="mt-4">
-          <label className="text-xs font-black text-slate-500">Turu geçen takım</label>
-          <select disabled={locked} value={advancing} onChange={(e) => setAdvancing(e.target.value)} className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 font-bold">
+        <div className="mt-3">
+          <label className="text-[11px] font-black text-slate-500">Turu geçen takım</label>
+          <select disabled={locked} value={advancing} onChange={(e) => setAdvancing(e.target.value)} className="mt-1 w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm font-bold disabled:bg-slate-100">
             <option value="">Seç</option>
             <option>{match.home_team}</option>
             <option>{match.away_team}</option>
@@ -1153,21 +1264,29 @@ function PredictionCard({ match, prediction, savePrediction, leagueTeams }: any)
       ) : null}
 
       <div className="mt-4 flex flex-wrap gap-2">
-        {QUICK_SCORES.map((s) => <button disabled={locked} key={s} onClick={() => quick(s)} className="rounded-xl bg-orange-50 px-3 py-1 text-xs font-black text-orange-700 disabled:opacity-40">{s}</button>)}
+        <AppButton kind="ghost" disabled={locked} onClick={() => setQuickOpen(!quickOpen)}>⚡ Hızlı skorlar</AppButton>
+        <AppButton kind={joker ? "primary" : "soft"} disabled={locked} onClick={() => { const next = !joker; setJoker(next); saveCurrent(next); }}>{joker ? "🃏 Joker seçildi" : "🃏 Joker yap"}</AppButton>
+        <AppButton disabled={locked} onClick={() => saveCurrent()}>Tahmini kaydet</AppButton>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <AppButton kind={joker ? "primary" : "soft"} disabled={locked} onClick={() => setJoker(!joker)}>{joker ? "🃏 Joker seçildi" : "Joker yap"}</AppButton>
-        <AppButton disabled={locked} onClick={() => savePrediction(match, home, away, advancing || null, joker)}>Kaydet</AppButton>
-      </div>
+      {quickOpen ? (
+        <div className="mt-3 flex flex-wrap gap-2 rounded-2xl bg-orange-50 p-3">
+          {QUICK_SCORES.map((s) => <button disabled={locked} key={s} onClick={() => quick(s)} className="rounded-xl bg-white px-3 py-1 text-xs font-black text-orange-700 shadow-sm disabled:opacity-40">{s}</button>)}
+        </div>
+      ) : null}
 
-      <p className="mt-4 text-xs leading-relaxed text-slate-500">
-        Puanlama: Tam skor +5 | Sonuç +3 | Ev gol +1 | Dep gol +1 | KG +1 | Üst/Alt +1
-        {match.match_type !== "Normal" ? ` | 🔥 ${match.match_type} x1.5` : ""}
-        {joker ? " | 🃏 Joker x2" : ""}
-        {match.is_knockout && match.tie_leg !== "first" ? " | 🏆 Turu geçen +2" : ""}
-      </p>
-      {prediction ? <div className="mt-3 rounded-2xl bg-green-50 px-3 py-2 text-sm font-bold text-green-700">Kaydedildi ✅</div> : null}
+      <div className="mt-4 rounded-2xl bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
+        Puan: Tam skor +5 · Sonuç +3{joker ? " · Joker x2" : ""}{match.match_type !== "Normal" ? ` · ${match.match_type} x1.5` : ""}
+        <button onClick={() => setDetailOpen(!detailOpen)} className="ml-2 font-black text-orange-600">{detailOpen ? "Detayı kapat" : "Detay göster"}</button>
+        {detailOpen ? (
+          <div className="mt-2 grid gap-1 text-[11px] font-semibold text-slate-500">
+            <span>Ev gol +1 · Dep gol +1</span>
+            <span>KG Var/Yok +1 · 2.5 Üst/Alt +1</span>
+            <span>Favori takım bonusu +1</span>
+            {match.is_knockout && match.tie_leg !== "first" ? <span>Eleme/kupa tur tahmini +2</span> : null}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
