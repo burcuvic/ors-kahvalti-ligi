@@ -877,7 +877,7 @@ export default function Page() {
             <div className="flex items-center gap-4">
               <img src={MASCOT_SRC} alt="ORS" className="h-16 w-16 rounded-3xl bg-orange-100 object-contain p-2" />
               <div>
-                <div className="text-xs font-black uppercase tracking-[0.25em] text-orange-500">World Cup arşiv + 2026-2027 sezonu</div>
+                <div className="text-xs font-black uppercase tracking-[0.25em] text-orange-500">2026-2027 sezonu</div>
                 <h1 className="text-3xl font-black tracking-tight text-slate-900">ORS Kahvaltı Ligi</h1>
                 <p className="text-sm text-slate-500">Skor tahmini, haftalık joker, favoriler ve sezonluk Avrupa bonusları ⚽</p>
               </div>
