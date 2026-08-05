@@ -573,21 +573,59 @@ export default function Page() {
     if (activeSetting?.active_week) setSelectedWeek(activeSetting.active_week);
   }, [selectedSeasonId]);
 
-  function login() {
-    const name = normalize(loginName);
-    const player = players.find((p) => normalize(p.name) === name);
+  async function login() {
+    const typedName = loginName.trim();
+    const typedCode = loginCode.trim();
+
+    if (!typedName) {
+      setMessage("Oyuncu adını yazalım.");
+      return;
+    }
+
+    // Önce ekrandaki güncel listeden bul; bulamazsa direkt Supabase'den tekrar ara.
+    // Böylece cache/state boş kalırsa giriş ekranı trip atmaz.
+    let player = players.find((p) => normalize(p.name) === normalize(typedName));
+
+    if (!player) {
+      const { data, error } = await supabase
+        .from("players")
+        .select("*")
+        .ilike("name", typedName)
+        .maybeSingle();
+
+      if (error) {
+        setMessage(error.message || "Oyuncu kontrol edilirken hata oluştu.");
+        return;
+      }
+      player = data as Player | null;
+    }
+
+    if (!player) {
+      // Türkçe karakter / boşluk farkları için son güvenli arama.
+      const { data, error } = await supabase.from("players").select("*");
+      if (error) {
+        setMessage(error.message || "Oyuncu listesi okunamadı.");
+        return;
+      }
+      player = ((data || []) as Player[]).find((p) => normalize(p.name) === normalize(typedName)) || null;
+      if (data?.length) setPlayers(data as Player[]);
+    }
+
     if (!player) {
       setMessage("Oyuncu bulunamadı. İsmi listedeki gibi yazalım.");
       return;
     }
+
     if (player.is_active === false && !isArchive) {
       setMessage("Bu oyuncu aktif sezonda pasif görünüyor.");
       return;
     }
-    if (player.login_code && player.login_code !== loginCode.trim()) {
+
+    if ((player.login_code || "").trim() && (player.login_code || "").trim() !== typedCode) {
       setMessage("Giriş kodu hatalı görünüyor.");
       return;
     }
+
     setCurrentPlayer(player);
     setIsAdminMode(false);
     setTab("dashboard");
