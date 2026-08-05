@@ -48,6 +48,7 @@ type Match = {
   league?: string | null;
   home_score?: number | null;
   away_score?: number | null;
+  season_id?: string | null;
 };
 
 type Prediction = {
@@ -75,6 +76,15 @@ type TeamStatus = {
   team_name: string;
   status: TeamStatusValue;
   updated_at?: string | null;
+};
+
+type Season = {
+  id: string;
+  name: string;
+  slug: string;
+  is_active: boolean;
+  is_archived: boolean;
+  created_at?: string | null;
 };
 
 type TeamStatusMap = Record<string, TeamStatusValue>;
@@ -1205,7 +1215,9 @@ function ProfileMascotCard({
 // ============================================================
 export default function Home() {
   const [players, setPlayers] = useState<Player[]>([]);
-  const [matches, setMatches] = useState<Match[]>([]);
+  const [allMatches, setAllMatches] = useState<Match[]>([]);
+  const [seasons, setSeasons] = useState<Season[]>([]);
+  const [selectedSeasonId, setSelectedSeasonId] = useState("");
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [bonusLogs, setBonusLogs] = useState<BonusLog[]>([]);
   const [teamStatuses, setTeamStatuses] = useState<TeamStatus[]>([]);
@@ -1268,17 +1280,50 @@ export default function Home() {
         .from("team_statuses")
         .select("*")
         .order("team_name", { ascending: true });
+      const { data: seasonsData } = await supabase
+        .from("seasons")
+        .select("*")
+        .order("created_at", { ascending: true });
 
       setPlayers(playersData || []);
-      setMatches(matchesData || []);
+      setAllMatches(matchesData || []);
       setPredictions(predictionsData || []);
       setBonusLogs(bonusData || []);
       setTeamStatuses((teamStatusData || []) as TeamStatus[]);
+      setSeasons((seasonsData || []) as Season[]);
       setLastUpdatedAt(new Date());
     } finally {
       setRefreshing(false);
     }
   };
+
+  const activeSeason = useMemo(
+    () => seasons.find((season) => season.is_active) || seasons[0] || null,
+    [seasons],
+  );
+
+  const selectedSeason = useMemo(
+    () => seasons.find((season) => season.id === selectedSeasonId) || activeSeason,
+    [seasons, selectedSeasonId, activeSeason],
+  );
+
+  const selectedSeasonArchived = !!selectedSeason?.is_archived;
+  const selectedSeasonName = selectedSeason?.name || "Sezon seçilmedi";
+
+  const matches = useMemo(() => {
+    if (!selectedSeason?.id) return allMatches;
+    return allMatches.filter((match) => {
+      if (match.season_id === selectedSeason.id) return true;
+      // Eski maçlar season_id taşımıyorsa onları Dünya Kupası arşivinde göster.
+      return !match.season_id && selectedSeason.slug === "world-cup-2026";
+    });
+  }, [allMatches, selectedSeason]);
+
+  useEffect(() => {
+    if (selectedSeasonId || seasons.length === 0) return;
+    const active = seasons.find((season) => season.is_active) || seasons[0];
+    if (active) setSelectedSeasonId(active.id);
+  }, [seasons, selectedSeasonId]);
 
   useEffect(() => {
     loadData();
@@ -1623,7 +1668,12 @@ export default function Home() {
         else wrongCount += 1;
       });
 
-      const bonusPoints = Number(player.bonus_points || 0);
+      const matchIds = new Set(finishedMatches.map((match) => match.id));
+      const matchBonusPoints = bonusLogs
+        .filter((bonus) => bonus.player_id === player.id && bonus.match_id && matchIds.has(bonus.match_id))
+        .reduce((sum, bonus) => sum + Number(bonus.points || 0), 0);
+      const archivedNullBonusPoints = selectedSeason?.slug === "world-cup-2026" ? Number(player.bonus_points || 0) : 0;
+      const bonusPoints = matchBonusPoints || archivedNullBonusPoints;
       const totalAnswered = correctCount + wrongCount;
       const successRate =
         totalAnswered > 0
@@ -1640,7 +1690,7 @@ export default function Home() {
         success_rate: successRate,
       };
     });
-  }, [players, matches, predictions]);
+  }, [players, matches, predictions, bonusLogs, selectedSeason]);
 
   const sortedPlayers = useMemo(() => {
     return [...calculatedPlayers].sort((a, b) => {
@@ -1676,8 +1726,8 @@ export default function Home() {
   }, [calculatedPlayers, playerStreaks, jokerScores]);
 
   const breakfastLinePlayers = useMemo(
-    () => getBreakfastLinePlayers(players),
-    [players],
+    () => getBreakfastLinePlayers(calculatedPlayers),
+    [calculatedPlayers],
   );
 
   const getPointsByPlayer = (matchList: Match[], ascending = false) => {
@@ -1791,6 +1841,10 @@ export default function Home() {
     useJoker = false,
   ) => {
     if (!currentPlayer) return;
+    if (selectedSeasonArchived) {
+      alert("Bu sezon arşivde; yeni tahmin yapılamaz 🔒");
+      return;
+    }
     if (new Date(match.match_time).getTime() <= Date.now()) {
       alert("Maç saati geldiği için tahmin kapandı 😄");
       return;
@@ -2095,10 +2149,11 @@ export default function Home() {
         week_no: 999,
         home_team: home,
         away_team: away,
-        breakfast_round: "Dünya Kupası 2026",
+        breakfast_round: activeSeason?.name || "2026-2027 Sezonu",
         league: stage,
         match_time: time,
         result: null,
+        season_id: activeSeason?.id || selectedSeason?.id || null,
       });
       if (!error) added++;
     }
@@ -2148,14 +2203,16 @@ export default function Home() {
       alert("Maç bilgilerini doldur 😄");
       return;
     }
+    const targetSeason = activeSeason || selectedSeason;
     const { error } = await supabase.from("matches").insert({
       home_team: homeTeam.trim(),
       away_team: awayTeam.trim(),
       match_time: matchTime,
       week_no: 999,
-      breakfast_round: "Dünya Kupası 2026",
+      breakfast_round: targetSeason?.name || "2026-2027 Sezonu",
       league: league.trim(),
       result: null,
+      season_id: targetSeason?.id || null,
     });
     if (error) {
       alert(error.message);
@@ -2259,7 +2316,7 @@ export default function Home() {
             ORS Kahvaltı Ligi
           </h1>
           <p className="relative mt-1 text-[1.55rem] font-black leading-tight text-red-500 md:mt-2 md:text-4xl">
-            World Cup 2026 Edition 🏆
+            {selectedSeason?.slug === "world-cup-2026" ? "World Cup 2026 Arşiv 🗃️" : "2026-2027 Sezonu 🏆"}
           </p>
           <p className="relative mb-3 mt-3 inline-flex rounded-full bg-amber-100 px-3 py-1.5 text-xs font-black text-amber-700 md:mb-6 md:px-4 md:py-2 md:text-sm">
             Tahmin Et • Kazan • Kahvaltıdan Kaç 🥯
@@ -2267,6 +2324,34 @@ export default function Home() {
           <p className="mb-4 font-bold text-slate-600">
             Hoş geldin <b>{currentPlayer.name}</b> 😄
           </p>
+
+          <div className="relative mb-4 rounded-[1.5rem] border border-amber-100 bg-amber-50/70 p-4">
+            <div className="mb-2 text-xs font-black uppercase tracking-wide text-amber-700">
+              Sezon seçimi
+            </div>
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <select
+                value={selectedSeason?.id || ""}
+                onChange={(e) => {
+                  setSelectedSeasonId(e.target.value);
+                  setSelectedStage("Tümü");
+                  setPredictionFilter("Açık");
+                  setMatchListFilter("Tümü");
+                  setSelectedMatchDate("");
+                }}
+                className="rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm font-black outline-none"
+              >
+                {seasons.map((season) => (
+                  <option key={season.id} value={season.id}>
+                    {season.is_archived ? "🗃️ " : "🏆 "}{season.name}
+                  </option>
+                ))}
+              </select>
+              <div className={`rounded-full px-4 py-2 text-xs font-black ${selectedSeasonArchived ? "bg-slate-200 text-slate-600" : "bg-green-100 text-green-700"}`}>
+                {selectedSeasonArchived ? "Arşiv sezonu: tahmin kapalı" : "Aktif sezon: tahmin açık"}
+              </div>
+            </div>
+          </div>
 
           <div className="mb-6 flex flex-wrap gap-2">
             <button
@@ -2434,6 +2519,14 @@ export default function Home() {
               predictions={predictions}
             />
 
+            <FinalTournamentReportPanel
+              sortedPlayers={sortedPlayers}
+              players={calculatedPlayers}
+              matches={matches}
+              predictions={predictions}
+              playerStreaks={playerStreaks}
+            />
+
             <ChampionLiveStatus players={players} matches={matches} />
           </section>
         )}
@@ -2442,6 +2535,12 @@ export default function Home() {
         {activeTab === "tahmin" && (
           <section className="rounded-[1.75rem] border-4 border-red-50 bg-white p-4 shadow-2xl shadow-red-100/70 md:rounded-[2rem] md:p-6">
             <h2 className="mb-6 text-xl font-black">🎯 Tahmin Yap</h2>
+
+            {selectedSeasonArchived && (
+              <div className="mb-5 rounded-[1.5rem] border border-slate-200 bg-slate-100 p-4 text-sm font-black text-slate-600">
+                🗃️ {selectedSeasonName} arşivlenmiş sezondur. Bu sezonda yeni tahmin yapılamaz; eski maçlar ve puanlar görüntülenir.
+              </div>
+            )}
 
             <ChampionPredictionCard
               currentPlayer={currentPlayer}
@@ -4080,6 +4179,310 @@ function MatchDifficultyPanel({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+
+function FinalTournamentReportPanel({
+  sortedPlayers,
+  players,
+  matches,
+  predictions,
+  playerStreaks,
+}: {
+  sortedPlayers: Player[];
+  players: Player[];
+  matches: Match[];
+  predictions: Prediction[];
+  playerStreaks: Record<string, number>;
+}) {
+  const teamStatusMap = useContext(TeamStatusContext);
+
+  const report = useMemo(() => {
+    const finishedMatches = matches.filter((match) => !!match.result);
+    const podium = sortedPlayers.slice(0, 3);
+    const breakfastLine = getBreakfastLinePlayers(sortedPlayers);
+
+    const jokerByPlayer = players.map((player) => {
+      let won = 0;
+      let busted = 0;
+      let extra = 0;
+
+      predictions.forEach((prediction) => {
+        if (prediction.player_id !== player.id || !prediction.is_joker) return;
+        const match = matches.find((item) => item.id === prediction.match_id);
+        if (!match?.result) return;
+
+        const guess = String(prediction.prediction || "").trim();
+        const result = String(match.result || "").trim();
+        if (guess === result) {
+          won += 1;
+          extra += 3;
+        } else if (guess && guess !== "YOK" && guess !== "BILINMIYOR") {
+          busted += 1;
+          extra -= 1;
+        }
+      });
+
+      return { player, won, busted, extra };
+    });
+
+    const jokerKing = [...jokerByPlayer].sort((a, b) => {
+      if (b.won !== a.won) return b.won - a.won;
+      return b.extra - a.extra;
+    })[0];
+
+    const jokerBust = [...jokerByPlayer].sort((a, b) => {
+      if (b.busted !== a.busted) return b.busted - a.busted;
+      return a.extra - b.extra;
+    })[0];
+
+    const formLeader = [...players]
+      .map((player) => {
+        const form = getLastFiveForm(player.id, matches, predictions);
+        return {
+          player,
+          points: form.reduce((sum, item) => sum + item.points, 0),
+          correct: form.filter((item) => item.correct).length,
+          total: form.length,
+        };
+      })
+      .filter((item) => item.total > 0)
+      .sort((a, b) => {
+        if (b.points !== a.points) return b.points - a.points;
+        return b.correct - a.correct;
+      })[0];
+
+    const matchStats = finishedMatches.map((match) => {
+      const matchPredictions = players.map((player) => {
+        const pred = predictions.find(
+          (item) => item.player_id === player.id && item.match_id === match.id,
+        );
+        const points = getPredictionCalculatedPoints(pred, match);
+        const isBlank = !pred || pred.prediction === "YOK" || pred.prediction === "BILINMIYOR";
+        return { player, pred, points, isBlank };
+      });
+
+      const valid = matchPredictions.filter((item) => !item.isBlank);
+      const correct = matchPredictions.filter((item) => item.points > 0).length;
+      const wrong = matchPredictions.filter((item) => item.points < 0).length;
+      const blank = matchPredictions.filter((item) => item.isBlank).length;
+      const correctRate = players.length > 0 ? Math.round((correct / players.length) * 100) : 0;
+      const totalLost = matchPredictions
+        .filter((item) => item.points < 0)
+        .reduce((sum, item) => sum + Math.abs(item.points), 0);
+
+      const counts = { "1": 0, X: 0, "2": 0 };
+      valid.forEach((item) => {
+        const key = item.pred?.prediction as "1" | "X" | "2";
+        if (key in counts) counts[key] += 1;
+      });
+      const values = [counts["1"], counts.X, counts["2"]].sort((a, b) => b - a);
+      const chaosScore = values[0] - values[2];
+
+      return {
+        match,
+        correct,
+        wrong,
+        blank,
+        correctRate,
+        totalLost,
+        chaosScore,
+      };
+    });
+
+    const hardestMatch = [...matchStats].sort((a, b) => {
+      if (a.correctRate !== b.correctRate) return a.correctRate - b.correctRate;
+      return b.totalLost - a.totalLost;
+    })[0];
+
+    const easiestMatch = [...matchStats].sort((a, b) => {
+      if (b.correctRate !== a.correctRate) return b.correctRate - a.correctRate;
+      return a.totalLost - b.totalLost;
+    })[0];
+
+    const burnerMatch = [...matchStats].sort((a, b) => {
+      if (b.totalLost !== a.totalLost) return b.totalLost - a.totalLost;
+      return b.wrong - a.wrong;
+    })[0];
+
+    const chaosMatch = [...matchStats].sort((a, b) => a.chaosScore - b.chaosScore)[0];
+
+    const championStatusByPlayer = players.map((player) => {
+      const team = player.champion_team || "";
+      const status = teamStatusMap[normalizeTeamName(team)] || "active";
+      return { player, team, status };
+    });
+
+    const championHitPlayers = championStatusByPlayer.filter((item) => item.status === "champion");
+    const championBustedPlayers = championStatusByPlayer.filter((item) => item.status === "eliminated");
+
+    const championPickCounts = championStatusByPlayer.reduce<Record<string, string[]>>((acc, item) => {
+      if (!item.team) return acc;
+      if (!acc[item.team]) acc[item.team] = [];
+      acc[item.team].push(item.player.name);
+      return acc;
+    }, {});
+
+    const mostPopularChampion = Object.entries(championPickCounts).sort(
+      (a, b) => b[1].length - a[1].length,
+    )[0];
+
+    const streakLeader = [...players]
+      .map((player) => ({ player, streak: playerStreaks[player.id] || 0 }))
+      .sort((a, b) => b.streak - a.streak)[0];
+
+    return {
+      finishedCount: finishedMatches.length,
+      podium,
+      breakfastLine,
+      jokerKing,
+      jokerBust,
+      formLeader,
+      hardestMatch,
+      easiestMatch,
+      burnerMatch,
+      chaosMatch,
+      championHitPlayers,
+      championBustedPlayers,
+      mostPopularChampion,
+      streakLeader,
+    };
+  }, [sortedPlayers, players, matches, predictions, playerStreaks, teamStatusMap]);
+
+  const matchLabel = (item?: { match: Match; correct?: number; wrong?: number; blank?: number; correctRate?: number }) => {
+    if (!item) return "—";
+    return `${item.match.home_team} - ${item.match.away_team}`;
+  };
+
+  const shareFinalReport = () => {
+    const first = report.podium[0];
+    const second = report.podium[1];
+    const third = report.podium[2];
+    const breakfast = report.breakfastLine.map((p) => p.name).join(", ") || "—";
+    const championHits = report.championHitPlayers.length
+      ? report.championHitPlayers.map((item) => `${item.player.name} (${item.team})`).join(", ")
+      : "Henüz yok / seçilmedi";
+    const championBusted = report.championBustedPlayers.length
+      ? report.championBustedPlayers.map((item) => `${item.player.name} (${item.team})`).join(", ")
+      : "Yok";
+
+    let message = `🏁 ORS Kahvaltı Ligi Final Raporu\n\n`;
+    message += `🏆 Şampiyon: ${first?.name || "—"} (${first?.total_points || 0} puan)\n`;
+    message += `🥈 İkinci: ${second?.name || "—"} (${second?.total_points || 0} puan)\n`;
+    message += `🥉 Üçüncü: ${third?.name || "—"} (${third?.total_points || 0} puan)\n\n`;
+    message += `🥐 Final Kahvaltı Hattı: ${breakfast}\n`;
+    message += `🃏 Joker Kralı: ${report.jokerKing?.player.name || "—"} (${report.jokerKing?.won || 0} kazandı, ${report.jokerKing?.extra || 0} ek puan)\n`;
+    message += `💥 Jokeri Elinde Patlayan: ${report.jokerBust?.player.name || "—"} (${report.jokerBust?.busted || 0} patladı)\n`;
+    message += `🔥 Formda Kapanış: ${report.formLeader?.player.name || "—"} (${report.formLeader?.points || 0} son 5 maç puanı)\n`;
+    message += `📈 Seri Rekoru: ${report.streakLeader?.player.name || "—"} (${report.streakLeader?.streak || 0})\n\n`;
+    message += `🧠 En Zor Maç: ${matchLabel(report.hardestMatch)} (%${report.hardestMatch?.correctRate || 0} doğru)\n`;
+    message += `🍰 En Kolay Maç: ${matchLabel(report.easiestMatch)} (%${report.easiestMatch?.correctRate || 0} doğru)\n`;
+    message += `🧨 En Çok Yakan Maç: ${matchLabel(report.burnerMatch)} (${report.burnerMatch?.totalLost || 0} kayıp puan)\n\n`;
+    message += `🏆 Şampiyonu bilenler: ${championHits}\n`;
+    message += `❌ Şampiyon tahmini patlayanlar: ${championBusted}\n\n`;
+    message += `Kısacası turnuva bitti ama kahvaltı masasında dosya kapanmaz 😄🥐\n`;
+    message += APP_URL;
+
+    shareToWhatsApp(message);
+  };
+
+  return (
+    <div className="mb-6 rounded-[2rem] border-2 border-slate-900 bg-gradient-to-br from-slate-950 via-slate-900 to-red-950 p-5 text-white shadow-2xl shadow-red-200/70">
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="text-2xl font-black">🏁 Turnuva Final Raporu</h3>
+          <p className="mt-1 text-sm font-bold text-slate-300">
+            Final akşamı için genel kapanış, jokerler, maç zorlukları ve şampiyon tahminleri.
+          </p>
+        </div>
+        <button
+          onClick={shareFinalReport}
+          className="rounded-full bg-emerald-400 px-4 py-2 text-sm font-black text-slate-950 transition hover:bg-emerald-300"
+        >
+          📲 WhatsApp Final Özeti
+        </button>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <div className="rounded-[1.5rem] border border-yellow-300/40 bg-white/10 p-4">
+          <div className="text-sm font-black text-yellow-200">🏆 Podyum</div>
+          <div className="mt-3 space-y-2 text-sm font-black">
+            <div>🥇 {report.podium[0]?.name || "—"} <span className="text-yellow-200">{report.podium[0]?.total_points || 0} puan</span></div>
+            <div>🥈 {report.podium[1]?.name || "—"} <span className="text-slate-300">{report.podium[1]?.total_points || 0} puan</span></div>
+            <div>🥉 {report.podium[2]?.name || "—"} <span className="text-orange-200">{report.podium[2]?.total_points || 0} puan</span></div>
+          </div>
+        </div>
+
+        <div className="rounded-[1.5rem] border border-red-300/40 bg-white/10 p-4">
+          <div className="text-sm font-black text-red-200">🥐 Final Kahvaltı Hattı</div>
+          <div className="mt-3 text-xl font-black">
+            {report.breakfastLine.map((p) => p.name).join(" • ") || "—"}
+          </div>
+          <div className="mt-1 text-xs font-bold text-slate-300">Genel toplamda en düşük puanlılar</div>
+        </div>
+
+        <div className="rounded-[1.5rem] border border-purple-300/40 bg-white/10 p-4">
+          <div className="text-sm font-black text-purple-200">🃏 Joker Raporu</div>
+          <div className="mt-3 text-sm font-black">
+            🃏 Kral: {report.jokerKing?.player.name || "—"} ({report.jokerKing?.won || 0})
+          </div>
+          <div className="mt-1 text-sm font-black">
+            💥 Patladı: {report.jokerBust?.player.name || "—"} ({report.jokerBust?.busted || 0})
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-[1.5rem] bg-white/10 p-4">
+          <div className="text-xs font-black uppercase tracking-wide text-blue-200">🧠 En zor maç</div>
+          <div className="mt-2 text-sm font-black">{matchLabel(report.hardestMatch)}</div>
+          <div className="mt-1 text-xs font-bold text-slate-300">%{report.hardestMatch?.correctRate || 0} doğru • {report.hardestMatch?.wrong || 0} yanan</div>
+        </div>
+        <div className="rounded-[1.5rem] bg-white/10 p-4">
+          <div className="text-xs font-black uppercase tracking-wide text-emerald-200">🍰 En kolay maç</div>
+          <div className="mt-2 text-sm font-black">{matchLabel(report.easiestMatch)}</div>
+          <div className="mt-1 text-xs font-bold text-slate-300">%{report.easiestMatch?.correctRate || 0} doğru</div>
+        </div>
+        <div className="rounded-[1.5rem] bg-white/10 p-4">
+          <div className="text-xs font-black uppercase tracking-wide text-red-200">🧨 En çok yakan</div>
+          <div className="mt-2 text-sm font-black">{matchLabel(report.burnerMatch)}</div>
+          <div className="mt-1 text-xs font-bold text-slate-300">{report.burnerMatch?.totalLost || 0} toplam kayıp puan</div>
+        </div>
+        <div className="rounded-[1.5rem] bg-white/10 p-4">
+          <div className="text-xs font-black uppercase tracking-wide text-amber-200">🔥 Formda kapanış</div>
+          <div className="mt-2 text-sm font-black">{report.formLeader?.player.name || "—"}</div>
+          <div className="mt-1 text-xs font-bold text-slate-300">Son 5 maç: {report.formLeader?.points || 0} puan</div>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div className="rounded-[1.5rem] bg-white/10 p-4">
+          <div className="mb-2 text-sm font-black text-yellow-200">🏆 Şampiyon tahmini yaşayan / bilenler</div>
+          {report.championHitPlayers.length ? (
+            <div className="space-y-1 text-sm font-bold">
+              {report.championHitPlayers.map((item) => (
+                <div key={item.player.id}>{item.player.name}: <TeamName team={item.team} /></div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm font-bold text-slate-300">Henüz şampiyon olarak işaretlenen takım yok.</div>
+          )}
+        </div>
+        <div className="rounded-[1.5rem] bg-white/10 p-4">
+          <div className="mb-2 text-sm font-black text-red-200">❌ Şampiyon tahmini patlayanlar</div>
+          {report.championBustedPlayers.length ? (
+            <div className="max-h-32 space-y-1 overflow-auto text-sm font-bold">
+              {report.championBustedPlayers.map((item) => (
+                <div key={item.player.id}>{item.player.name}: <TeamName team={item.team} /></div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm font-bold text-slate-300">Patlayan şampiyon tahmini yok.</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
