@@ -584,7 +584,7 @@ export default function Page() {
 
     // Önce ekrandaki güncel listeden bul; bulamazsa direkt Supabase'den tekrar ara.
     // Böylece cache/state boş kalırsa giriş ekranı trip atmaz.
-    let player = players.find((p) => normalize(p.name) === normalize(typedName));
+    let player: Player | null = players.find((p) => normalize(p.name) === normalize(typedName)) || null;
 
     if (!player) {
       const { data, error } = await supabase
@@ -597,7 +597,7 @@ export default function Page() {
         setMessage(error.message || "Oyuncu kontrol edilirken hata oluştu.");
         return;
       }
-      player = data as Player | null;
+      player = (data as Player | null) || null;
     }
 
     if (!player) {
