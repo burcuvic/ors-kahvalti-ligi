@@ -1528,7 +1528,8 @@ function ProfileTab({ currentPlayer, profilePlayer, isOwnProfile, selectedSeason
   const allTeamNames: string[] = Array.from(new Set<string>(leagueTeams.map((t: LeagueTeam) => String(t.team_name || ""))))
     .filter(Boolean)
     .sort((a, b) => a.localeCompare(b, "tr-TR"));
-  const weeks = Array.from(new Set(activeMatches.map((m: Match) => Number(m.week_no || 1)).filter(Boolean))).sort((a:any,b:any)=>a-b);
+  const weeks: number[] = Array.from(new Set(activeMatches.map((m: Match) => Number(m.week_no || 1)).filter(Boolean))) as number[];
+  weeks.sort((a: number, b: number) => a - b);
 
   return (
     <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
