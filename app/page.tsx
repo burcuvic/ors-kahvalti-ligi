@@ -1345,6 +1345,20 @@ function AdminTab({ selectedSeason, seasons, activeWeek, leagueTeams, players, m
     if (error) setMessage(error.message); else { setMessage("Sonuç kaydedildi ✅"); reload(); }
   }
 
+  async function deleteMatch(match: Match) {
+    const ok = window.confirm(`${match.home_team} - ${match.away_team} maçını silmek istediğine emin misin? Bu maça ait tahminler de silinir.`);
+    if (!ok) return;
+
+    const { error } = await supabase.from("matches").delete().eq("id", match.id);
+    if (error) {
+      setMessage(error.message);
+      return;
+    }
+
+    setMessage("Maç silindi ✅");
+    reload();
+  }
+
   async function setActiveWeek(value: number) {
     const { error } = await supabase.from("season_settings").upsert({ season_id: selectedSeason.id, active_week: value, updated_at: new Date().toISOString() }, { onConflict: "season_id" });
     if (error) setMessage(error.message); else { setMessage(`Aktif hafta ${value} yapıldı ✅`); reload(); }
@@ -1388,7 +1402,55 @@ function AdminTab({ selectedSeason, seasons, activeWeek, leagueTeams, players, m
         {["matches", "results", "csv", "teams", "players", "season"].map((x) => <button key={x} onClick={()=>setAdminTab(x)} className={cx("rounded-2xl px-4 py-2 text-sm font-black", adminTab===x?"bg-orange-500 text-white":"hover:bg-orange-100")}>{x}</button>)}
       </div>
 
-      {adminTab === "matches" && <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100"><h2 className="text-xl font-black">Maç ekle</h2><div className="mt-4 grid gap-3 md:grid-cols-3"><input type="number" value={newMatch.week_no} onChange={e=>setNewMatch({...newMatch, week_no:Number(e.target.value)})} className="rounded-2xl border p-3" placeholder="Hafta"/><input value={newMatch.match_time} onChange={e=>setNewMatch({...newMatch, match_time:e.target.value})} className="rounded-2xl border p-3" placeholder="2026-08-14 21:30"/><select value={newMatch.league} onChange={e=>setNewMatch({...newMatch, league:e.target.value})} className="rounded-2xl border p-3">{LEAGUES.map(l=><option key={l}>{l}</option>)}</select><input value={newMatch.home_team} onChange={e=>setNewMatch({...newMatch, home_team:e.target.value})} className="rounded-2xl border p-3" placeholder="Ev sahibi"/><input value={newMatch.away_team} onChange={e=>setNewMatch({...newMatch, away_team:e.target.value})} className="rounded-2xl border p-3" placeholder="Deplasman"/><select value={newMatch.match_type} onChange={e=>setNewMatch({...newMatch, match_type:e.target.value})} className="rounded-2xl border p-3">{MATCH_TYPES.map(l=><option key={l}>{l}</option>)}</select><select value={newMatch.tie_leg} onChange={e=>setNewMatch({...newMatch, tie_leg:e.target.value})} className="rounded-2xl border p-3"><option value="none">none</option><option value="single">single</option><option value="first">first</option><option value="second">second</option></select><label className="flex items-center gap-2 font-bold"><input type="checkbox" checked={newMatch.is_knockout} onChange={e=>setNewMatch({...newMatch, is_knockout:e.target.checked})}/> Eleme/kupa</label><AppButton onClick={addMatch}>Maç ekle</AppButton></div></section>}
+      {adminTab === "matches" && (
+        <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100">
+          <h2 className="text-xl font-black">Maç ekle / sil</h2>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <input type="number" value={newMatch.week_no} onChange={e=>setNewMatch({...newMatch, week_no:Number(e.target.value)})} className="rounded-2xl border p-3" placeholder="Hafta"/>
+            <input value={newMatch.match_time} onChange={e=>setNewMatch({...newMatch, match_time:e.target.value})} className="rounded-2xl border p-3" placeholder="2026-08-14T21:30:00+03:00"/>
+            <select value={newMatch.league} onChange={e=>setNewMatch({...newMatch, league:e.target.value})} className="rounded-2xl border p-3">{LEAGUES.map(l=><option key={l}>{l}</option>)}</select>
+            <input value={newMatch.home_team} onChange={e=>setNewMatch({...newMatch, home_team:e.target.value})} className="rounded-2xl border p-3" placeholder="Ev sahibi"/>
+            <input value={newMatch.away_team} onChange={e=>setNewMatch({...newMatch, away_team:e.target.value})} className="rounded-2xl border p-3" placeholder="Deplasman"/>
+            <select value={newMatch.match_type} onChange={e=>setNewMatch({...newMatch, match_type:e.target.value})} className="rounded-2xl border p-3">{MATCH_TYPES.map(l=><option key={l}>{l}</option>)}</select>
+            <select value={newMatch.tie_leg} onChange={e=>setNewMatch({...newMatch, tie_leg:e.target.value})} className="rounded-2xl border p-3"><option value="none">none</option><option value="single">single</option><option value="first">first</option><option value="second">second</option></select>
+            <label className="flex items-center gap-2 font-bold"><input type="checkbox" checked={newMatch.is_knockout} onChange={e=>setNewMatch({...newMatch, is_knockout:e.target.checked})}/> Eleme/kupa</label>
+            <AppButton onClick={addMatch}>Maç ekle</AppButton>
+          </div>
+
+          <div className="mt-8">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="font-black">Bu sezondaki maçlar</h3>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-500">{matches.length} maç</span>
+            </div>
+
+            <div className="mt-3 grid gap-2">
+              {matches.length === 0 ? (
+                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">Henüz maç yok.</div>
+              ) : (
+                matches.map((m: Match) => (
+                  <div key={m.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-100 p-3">
+                    <div>
+                      <div className="font-black">{m.home_team} - {m.away_team}</div>
+                      <div className="mt-1 text-xs font-bold text-slate-500">
+                        Hafta {m.week_no || "-"} • {m.league || "-"} • {formatDate(m.match_time)} • {m.match_type || "Normal"}
+                      </div>
+                      {isPlayed(m) ? <div className="mt-1 text-xs font-black text-green-600">Sonuç girilmiş: {m.home_score} - {m.away_score}</div> : null}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => deleteMatch(m)}
+                      className="rounded-2xl bg-red-50 px-4 py-2 text-sm font-black text-red-600 hover:bg-red-100"
+                    >
+                      Sil
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </section>
+      )}
 
       {adminTab === "results" && <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100"><h2 className="text-xl font-black">Sonuç gir</h2><div className="mt-4 grid gap-3">{matches.map((m: Match)=><AdminResultRow key={m.id} match={m} saveResult={saveResult}/>)}</div></section>}
 
