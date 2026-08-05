@@ -371,9 +371,10 @@ function scorePrediction(
 }
 
 function getWeeks(matches: Match[], activeWeek: number) {
-  const weeks = Array.from(
-    new Set(matches.map((m) => Number(m.week_no || 1)).filter(Boolean)),
-  ).sort((a, b) => a - b);
+  const weeks: number[] = Array.from(
+    new Set<number>(matches.map((m: Match) => Number(m.week_no || 1)).filter(Boolean) as number[]),
+  );
+  weeks.sort((a: number, b: number) => a - b);
   return weeks.length ? weeks : [activeWeek || 1];
 }
 
@@ -1734,7 +1735,8 @@ function AdminTab({ selectedSeason, seasons, activeWeek, leagueTeams, players, m
   const [bonusWeek, setBonusWeek] = useState<number | "">(activeWeek || 1);
   const [showAllBonus, setShowAllBonus] = useState(false);
 
-  const adminWeeks = Array.from(new Set(matches.map((m: Match) => Number(m.week_no || 1)).filter(Boolean))).sort((a:number,b:number)=>a-b);
+  const adminWeeks: number[] = Array.from(new Set<number>(matches.map((m: Match) => Number(m.week_no || 1)).filter(Boolean) as number[]));
+  adminWeeks.sort((a: number, b: number) => a - b);
   const adminFilteredMatches = matches
     .filter((m: Match) => adminWeekFilter === "Tümü" || Number(m.week_no || 1) === adminWeekFilter)
     .filter((m: Match) => adminLeagueFilter === "Tümü" || m.league === adminLeagueFilter)
