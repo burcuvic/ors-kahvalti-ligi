@@ -15,6 +15,7 @@ type Player = {
   id: string;
   name: string;
   team?: string | null;
+  heart_team?: string | null;
   is_admin?: boolean | null;
   login_code?: string | null;
   is_active?: boolean | null;
@@ -54,6 +55,7 @@ type Match = {
   penalty_away_score?: number | null;
   advancing_team?: string | null;
   is_published?: boolean | null;
+  admin_note?: string | null;
 };
 
 type OldPrediction = {
@@ -87,6 +89,7 @@ type LeagueTeam = {
   secondary_color?: string | null;
   text_color?: string | null;
   logo_url?: string | null;
+  manual_form?: string | null;
 };
 
 type PlayerFavorite = {
@@ -119,6 +122,17 @@ type SeasonSetting = {
   id?: string;
   season_id: string;
   active_week: number;
+};
+
+type AdminPoint = {
+  id?: string;
+  season_id: string;
+  player_id: string;
+  points: number;
+  point_type: string;
+  description: string;
+  week_no?: number | null;
+  created_at?: string | null;
 };
 
 type TabKey =
@@ -407,6 +421,7 @@ export default function Page() {
   const [euroPredictions, setEuroPredictions] = useState<EuroPrediction[]>([]);
   const [leagueWinners, setLeagueWinners] = useState<LeagueWinner[]>([]);
   const [seasonSettings, setSeasonSettings] = useState<SeasonSetting[]>([]);
+  const [adminPoints, setAdminPoints] = useState<AdminPoint[]>([]);
 
   const [loginName, setLoginName] = useState("");
   const [loginCode, setLoginCode] = useState("");
@@ -419,6 +434,7 @@ export default function Page() {
   const [leagueFilter, setLeagueFilter] = useState("Tümü");
   const [typeFilter, setTypeFilter] = useState("Tümü");
   const [predictionStatusFilter, setPredictionStatusFilter] = useState("Tümü");
+  const [viewedPlayerId, setViewedPlayerId] = useState<string>("");
 
   const activeSeason = useMemo(
     () => seasons.find((s) => s.is_active) || seasons[0],
@@ -496,6 +512,7 @@ export default function Page() {
         euroRes,
         winnerRes,
         settingsRes,
+        adminPointsRes,
       ] = await Promise.all([
         supabase.from("players").select("*").order("name"),
         supabase.from("seasons").select("*").order("created_at"),
@@ -507,6 +524,7 @@ export default function Page() {
         supabase.from("european_champion_predictions").select("*"),
         supabase.from("league_winners").select("*"),
         supabase.from("season_settings").select("*"),
+        supabase.from("admin_points").select("*").order("created_at", { ascending: false }),
       ]);
 
       if (playersRes.error) throw playersRes.error;
@@ -519,6 +537,7 @@ export default function Page() {
       if (euroRes.error) throw euroRes.error;
       if (winnerRes.error) throw winnerRes.error;
       if (settingsRes.error) throw settingsRes.error;
+      if (adminPointsRes.error) throw adminPointsRes.error;
 
       setPlayers(playersRes.data || []);
       setSeasons(seasonsRes.data || []);
@@ -530,6 +549,7 @@ export default function Page() {
       setEuroPredictions(euroRes.data || []);
       setLeagueWinners(winnerRes.data || []);
       setSeasonSettings(settingsRes.data || []);
+      setAdminPoints(adminPointsRes.data || []);
 
       const active = (seasonsRes.data || []).find((s) => s.is_active) || (seasonsRes.data || [])[0];
       if (!selectedSeasonId && active) {
@@ -654,10 +674,17 @@ export default function Page() {
 
       const seasonBonus = seasonBonusFor(player.id);
       total += seasonBonus.total;
+      const matchPoints = total;
+      const adminPointTotal = adminPoints
+        .filter((p) => p.season_id === selectedSeason?.id && p.player_id === player.id)
+        .reduce((sum, p) => sum + Number(p.points || 0), 0);
+      total += adminPointTotal;
 
       return {
         player,
         total,
+        matchPoints,
+        adminPointTotal,
         exact,
         resultCorrect,
         missing,
@@ -668,7 +695,7 @@ export default function Page() {
         playedCount,
       };
     }).sort((a, b) => b.total - a.total || b.exact - a.exact || b.resultCorrect - a.resultCorrect);
-  }, [activePlayers, activeMatches, currentScorePredictions, currentFavorites, leagueWinners, currentEuroPredictions, selectedSeason?.id]);
+  }, [activePlayers, activeMatches, currentScorePredictions, currentFavorites, leagueWinners, currentEuroPredictions, selectedSeason?.id, adminPoints]);
 
   const myRank = currentPlayer ? scoreRows.findIndex((r) => r.player.id === currentPlayer.id) + 1 : 0;
   const myRow = currentPlayer ? scoreRows.find((r) => r.player.id === currentPlayer.id) : undefined;
@@ -752,6 +779,18 @@ export default function Page() {
     }
   }
 
+
+  async function saveHeartTeam(teamName: string) {
+    if (!currentPlayer) return;
+    const { error } = await supabase.from("players").update({ heart_team: teamName || null }).eq("id", currentPlayer.id);
+    if (error) setMessage(error.message);
+    else {
+      setCurrentPlayer({ ...currentPlayer, heart_team: teamName || null });
+      setMessage("Tuttuğun takım kaydedildi ❤️");
+      await loadAll();
+    }
+  }
+
   function isFavoriteLeagueLocked(league: string) {
     const first = activeMatches
       .filter((m) => m.league === league)
@@ -801,7 +840,7 @@ export default function Page() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-orange-50 via-amber-50 to-rose-50 text-slate-900">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.18),_transparent_32%),linear-gradient(135deg,#ecfdf5_0%,#fff7ed_45%,#fff1f2_100%)] text-slate-900">
       <div className="mx-auto max-w-7xl px-4 py-6">
         <header className="mb-6 rounded-[2rem] bg-white/85 p-5 shadow-xl ring-1 ring-orange-100 backdrop-blur">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -866,7 +905,7 @@ export default function Page() {
               ].map(([key, label]) => (
                 <button
                   key={key}
-                  onClick={() => setTab(key as TabKey)}
+                  onClick={() => { if (key === "profile") setViewedPlayerId(""); setTab(key as TabKey); }}
                   className={cx(
                     "shrink-0 rounded-2xl px-4 py-2 text-sm font-black transition",
                     tab === key ? "bg-orange-500 text-white shadow" : "text-slate-600 hover:bg-orange-100",
@@ -891,6 +930,7 @@ export default function Page() {
                     activeWeek={activeWeek}
                     activeMatches={activeMatches}
                     leagueTeams={leagueTeams}
+                    onViewProfile={(playerId: string) => { setViewedPlayerId(playerId); setTab("profile"); }}
                   />
                 )}
                 {tab === "predict" && (
@@ -939,17 +979,20 @@ export default function Page() {
                 {tab === "profile" && currentPlayer && (
                   <ProfileTab
                     currentPlayer={currentPlayer}
+                    profilePlayer={players.find((p) => p.id === viewedPlayerId) || currentPlayer}
+                    isOwnProfile={(players.find((p) => p.id === viewedPlayerId) || currentPlayer).id === currentPlayer.id}
                     selectedSeason={selectedSeason}
-                    favorites={myFavorites}
-                    euroPredictions={currentEuroPredictions.filter((p) => p.player_id === currentPlayer.id)}
+                    allFavorites={currentFavorites}
+                    allPredictions={currentScorePredictions}
+                    euroPredictions={currentEuroPredictions}
                     teamOptions={teamOptions}
                     saveFavorite={saveFavorite}
                     saveEuroPrediction={saveEuroPrediction}
+                    saveHeartTeam={saveHeartTeam}
                     isFavoriteLeagueLocked={isFavoriteLeagueLocked}
                     isEuroLocked={isEuroLocked}
                     activeMatches={activeMatches}
-                    predictionFor={(matchId: string) => predictionFor(currentPlayer.id, matchId)}
-                    playerFavorites={myFavorites}
+                    leagueTeams={leagueTeams}
                   />
                 )}
                 {tab === "compare" && <CompareTab scoreRows={scoreRows} />}
@@ -975,6 +1018,7 @@ export default function Page() {
                     players={players}
                     matches={activeMatches}
                     leagueWinners={leagueWinners.filter((w) => w.season_id === selectedSeason.id)}
+                    adminPoints={adminPoints.filter((p) => p.season_id === selectedSeason.id)}
                     reload={loadAll}
                     setMessage={setMessage}
                   />
@@ -988,7 +1032,7 @@ export default function Page() {
   );
 }
 
-function Dashboard({ scoreRows, currentPlayer, myRank, myRow, selectedSeason, activeWeek, activeMatches }: any) {
+function Dashboard({ scoreRows, currentPlayer, myRank, myRow, selectedSeason, activeWeek, activeMatches, onViewProfile }: any) {
   const weekMatches = activeMatches.filter((m: Match) => Number(m.week_no || 1) === activeWeek);
   const played = activeMatches.filter(isPlayed).length;
   const leader = scoreRows[0];
@@ -1006,7 +1050,7 @@ function Dashboard({ scoreRows, currentPlayer, myRank, myRow, selectedSeason, ac
         <div className="mb-4 flex items-center justify-between">
           <div>
             <h2 className="text-xl font-black">Puan Tablosu</h2>
-            <p className="text-sm text-slate-500">Sade tablo: puan, tam skor, doğru sonuç, tahmin yok.</p>
+            <p className="text-sm text-slate-500">Şeffaf tablo: maç puanı, admin puanı ve toplam ayrı görünür.</p>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -1015,7 +1059,9 @@ function Dashboard({ scoreRows, currentPlayer, myRank, myRow, selectedSeason, ac
               <tr>
                 <th className="p-3">#</th>
                 <th className="p-3">Oyuncu</th>
-                <th className="p-3">Puan</th>
+                <th className="p-3">Maç Puanı</th>
+                <th className="p-3">Admin Puanı</th>
+                <th className="p-3">Toplam</th>
                 <th className="p-3">Tam Skor</th>
                 <th className="p-3">Doğru Sonuç</th>
                 <th className="p-3">Tahmin Yok</th>
@@ -1026,7 +1072,9 @@ function Dashboard({ scoreRows, currentPlayer, myRank, myRow, selectedSeason, ac
               {scoreRows.map((row: any, index: number) => (
                 <tr key={row.player.id} className="border-t border-slate-100">
                   <td className="p-3 font-black">{index + 1}</td>
-                  <td className="p-3 font-bold">{index === 0 ? "👑 " : ""}{row.player.name}</td>
+                  <td className="p-3 font-bold"><button onClick={() => onViewProfile(row.player.id)} className="font-black text-slate-800 underline decoration-orange-300 underline-offset-4 hover:text-orange-600">{index === 0 ? "👑 " : ""}{row.player.name}</button></td>
+                  <td className="p-3 font-black text-slate-700">{row.matchPoints}</td>
+                  <td className={cx("p-3 font-black", row.adminPointTotal > 0 ? "text-green-600" : row.adminPointTotal < 0 ? "text-rose-600" : "text-slate-400")}>{row.adminPointTotal}</td>
                   <td className="p-3 text-lg font-black text-orange-600">{row.total}</td>
                   <td className="p-3">{row.exact}</td>
                   <td className="p-3">{row.resultCorrect}</td>
@@ -1099,6 +1147,84 @@ function groupMatchesByDay(matches: Match[]) {
   }, {});
 }
 
+
+
+function normalizeForm(value?: string | null) {
+  const tokens = String(value || "")
+    .toUpperCase()
+    .replaceAll(",", " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((x) => (x.startsWith("W") || x.startsWith("G") ? "W" : x.startsWith("D") || x.startsWith("B") ? "D" : x.startsWith("L") || x.startsWith("M") ? "L" : ""))
+    .filter(Boolean)
+    .slice(0, 5);
+  return tokens;
+}
+
+function formStats(form: string[]) {
+  const w = form.filter((x) => x === "W").length;
+  const d = form.filter((x) => x === "D").length;
+  const l = form.filter((x) => x === "L").length;
+  return { w, d, l, score: w * 3 + d };
+}
+
+function formDots(form: string[]) {
+  if (!form.length) return <span className="text-slate-400">Form yok</span>;
+  return <span className="tracking-wide">{form.map((x, i) => x === "W" ? <span key={i}>🟢 </span> : x === "D" ? <span key={i}>⚪ </span> : <span key={i}>🔴 </span>)}</span>;
+}
+
+function getTeamForm(teamName: string, league: string | null | undefined, leagueTeams: LeagueTeam[], activeMatches: Match[]) {
+  const normalizedTeam = normalize(teamName);
+  const played = activeMatches
+    .filter(isPlayed)
+    .filter((m) => normalize(m.home_team) === normalizedTeam || normalize(m.away_team) === normalizedTeam)
+    .sort((a, b) => new Date(b.match_time).getTime() - new Date(a.match_time).getTime())
+    .slice(0, 5)
+    .map((m) => {
+      const home = Number(m.home_score ?? 0);
+      const away = Number(m.away_score ?? 0);
+      const isHome = normalize(m.home_team) === normalizedTeam;
+      if (home === away) return "D";
+      const teamWon = isHome ? home > away : away > home;
+      return teamWon ? "W" : "L";
+    });
+  if (played.length) return played;
+  const team = findTeam(leagueTeams, teamName, league);
+  return normalizeForm(team?.manual_form);
+}
+
+function smartRandomScore(homeForm: string[], awayForm: string[]) {
+  const homePower = formStats(homeForm).score + 1;
+  const awayPower = formStats(awayForm).score;
+  const diff = homePower - awayPower;
+  const homeWin = ["1-0", "2-0", "2-1", "3-1"];
+  const awayWin = ["0-1", "1-2", "0-2", "1-3"];
+  const draw = ["0-0", "1-1", "2-2"];
+  let pool = [...homeWin, ...awayWin, ...draw];
+  if (diff >= 5) pool = [...homeWin, ...homeWin, ...homeWin, ...draw, "1-2"];
+  else if (diff >= 2) pool = [...homeWin, ...homeWin, ...draw, ...awayWin.slice(0, 1)];
+  else if (diff <= -5) pool = [...awayWin, ...awayWin, ...awayWin, ...draw, "2-1"];
+  else if (diff <= -2) pool = [...awayWin, ...awayWin, ...draw, ...homeWin.slice(0, 1)];
+  else pool = [...draw, ...draw, ...homeWin.slice(0, 2), ...awayWin.slice(0, 2)];
+  const pick = pool[Math.floor(Math.random() * pool.length)] || "1-1";
+  const [h, a] = pick.split("-").map(Number);
+  return { home: h, away: a, confidence: Math.abs(diff) };
+}
+
+function badgeCountsForPlayer(playerId: string, activeMatches: Match[], predictions: ScorePrediction[], favs: PlayerFavorite[]) {
+  const counts: Record<string, number> = {};
+  activeMatches.filter(isPlayed).forEach((match) => {
+    const pred = predictions.find((p) => p.player_id === playerId && p.match_id === match.id);
+    const s = scorePrediction(pred, match, favs);
+    if (s.exact) counts["🎯 Tam Skorcu"] = (counts["🎯 Tam Skorcu"] || 0) + 1;
+    if (pred?.is_joker && s.total > 0) counts["🃏 Joker Ustası"] = (counts["🃏 Joker Ustası"] || 0) + 1;
+    if (s.favoriteBonus) counts["❤️ Favori Fanatiği"] = (counts["❤️ Favori Fanatiği"] || 0) + 1;
+    if ((match.match_type || "") === "Derbi" && s.resultCorrect) counts["🏟️ Derbi Kahini"] = (counts["🏟️ Derbi Kahini"] || 0) + 1;
+    if ((match.match_type || "").includes("Avrupa") && s.resultCorrect) counts["🌍 Avrupa Uzmanı"] = (counts["🌍 Avrupa Uzmanı"] || 0) + 1;
+  });
+  return counts;
+}
+
 function StatMiniCard({ icon, value, label }: any) {
   return (
     <div className="rounded-[1.5rem] bg-white p-4 text-center shadow ring-1 ring-orange-100">
@@ -1164,6 +1290,26 @@ function PredictTab(props: any) {
             ✅ Bu haftanın tüm tahminleri tamam. Kahvaltı kupası kokusu geldi.
           </div>
         )}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <AppButton kind="soft" onClick={async () => {
+            const mode = window.confirm("Tamam dersen tüm açık tahminleri yeniden oluştururum. İptal dersen sadece eksikleri doldururum.") ? "all" : "missing";
+            const openMatches = weekMatches.filter((m: Match) => !isStarted(m));
+            const candidates: Array<{ match: Match; home: number; away: number; confidence: number }> = [];
+            openMatches.forEach((match: Match) => {
+              const existing = predictions.find((p: ScorePrediction) => p.player_id === currentPlayer.id && p.match_id === match.id);
+              if (mode === "missing" && existing) return;
+              const hForm = getTeamForm(match.home_team, match.league, leagueTeams || [], activeMatches);
+              const aForm = getTeamForm(match.away_team, match.league, leagueTeams || [], activeMatches);
+              const r = smartRandomScore(hForm, aForm);
+              candidates.push({ match, ...r });
+            });
+            if (!candidates.length) return;
+            const jokerPick = candidates.sort((a, b) => b.confidence - a.confidence)[0];
+            for (const item of candidates) {
+              await savePrediction(item.match, item.home, item.away, null, item.match.id === jokerPick.match.id);
+            }
+          }}>🎲 Haftayı rastgele doldur</AppButton>
+        </div>
       </section>
 
       <div className="grid gap-5">
@@ -1172,7 +1318,7 @@ function PredictTab(props: any) {
             <h3 className="px-1 text-sm font-black uppercase tracking-wide text-slate-500">📅 {day}</h3>
             <div className="grid gap-4 lg:grid-cols-2">
               {(matches as Match[]).map((match: Match) => (
-                <PredictionCard key={match.id} match={match} prediction={predictions.find((p: ScorePrediction) => p.player_id === currentPlayer.id && p.match_id === match.id)} savePrediction={savePrediction} leagueTeams={leagueTeams} />
+                <PredictionCard key={match.id} match={match} prediction={predictions.find((p: ScorePrediction) => p.player_id === currentPlayer.id && p.match_id === match.id)} savePrediction={savePrediction} leagueTeams={leagueTeams} activeMatches={activeMatches} />
               ))}
             </div>
           </section>
@@ -1184,7 +1330,7 @@ function PredictTab(props: any) {
   );
 }
 
-function PredictionCard({ match, prediction, savePrediction, leagueTeams }: any) {
+function PredictionCard({ match, prediction, savePrediction, leagueTeams, activeMatches }: any) {
   const [home, setHome] = useState<number>(prediction?.home_goals ?? 0);
   const [away, setAway] = useState<number>(prediction?.away_goals ?? 0);
   const [advancing, setAdvancing] = useState<string>(prediction?.advancing_team || "");
@@ -1195,6 +1341,10 @@ function PredictionCard({ match, prediction, savePrediction, leagueTeams }: any)
   const homeTeamLook = findTeam(leagueTeams || [], match.home_team, match.league);
   const awayTeamLook = findTeam(leagueTeams || [], match.away_team, match.league);
   const status = predictionCardStatus(match, prediction);
+  const homeForm = getTeamForm(match.home_team, match.league, leagueTeams || [], activeMatches || []);
+  const awayForm = getTeamForm(match.away_team, match.league, leagueTeams || [], activeMatches || []);
+  const homeStats = formStats(homeForm);
+  const awayStats = formStats(awayForm);
 
   useEffect(() => {
     setHome(prediction?.home_goals ?? 0);
@@ -1252,6 +1402,11 @@ function PredictionCard({ match, prediction, savePrediction, leagueTeams }: any)
         </div>
       </div>
 
+      <div className="mt-3 grid gap-2 rounded-2xl bg-emerald-50/70 p-3 text-xs font-bold text-slate-600 md:grid-cols-2">
+        <div><span className="font-black">{match.home_team} form:</span> {formDots(homeForm)}<div className="mt-1 text-[11px] text-slate-500">Son 5 maç: {homeStats.w}G {homeStats.d}B {homeStats.l}M</div></div>
+        <div><span className="font-black">{match.away_team} form:</span> {formDots(awayForm)}<div className="mt-1 text-[11px] text-slate-500">Son 5 maç: {awayStats.w}G {awayStats.d}B {awayStats.l}M</div></div>
+      </div>
+
       {match.is_knockout && match.tie_leg !== "first" ? (
         <div className="mt-3">
           <label className="text-[11px] font-black text-slate-500">Turu geçen takım</label>
@@ -1265,6 +1420,7 @@ function PredictionCard({ match, prediction, savePrediction, leagueTeams }: any)
 
       <div className="mt-4 flex flex-wrap gap-2">
         <AppButton kind="ghost" disabled={locked} onClick={() => setQuickOpen(!quickOpen)}>⚡ Hızlı skorlar</AppButton>
+        <AppButton kind="ghost" disabled={locked} onClick={() => { const r = smartRandomScore(homeForm, awayForm); setHome(r.home); setAway(r.away); savePrediction(match, r.home, r.away, advancing || null, joker); }}>🎲 Rastgele</AppButton>
         <AppButton kind={joker ? "primary" : "soft"} disabled={locked} onClick={() => { const next = !joker; setJoker(next); saveCurrent(next); }}>{joker ? "🃏 Joker seçildi" : "🃏 Joker yap"}</AppButton>
         <AppButton disabled={locked} onClick={() => saveCurrent()}>Tahmini kaydet</AppButton>
       </div>
@@ -1346,26 +1502,92 @@ function MatchesTab(props: any) {
   );
 }
 
-function ProfileTab({ currentPlayer, selectedSeason, favorites, euroPredictions, teamOptions, saveFavorite, saveEuroPrediction, isFavoriteLeagueLocked, isEuroLocked, activeMatches, predictionFor, playerFavorites }: any) {
+function ProfileTab({ currentPlayer, profilePlayer, isOwnProfile, selectedSeason, allFavorites, allPredictions, euroPredictions, teamOptions, saveFavorite, saveEuroPrediction, saveHeartTeam, isFavoriteLeagueLocked, isEuroLocked, activeMatches, leagueTeams }: any) {
+  const [historyWeek, setHistoryWeek] = useState("Son 5");
+  const [historyLeague, setHistoryLeague] = useState("Tümü");
+  const [historyResult, setHistoryResult] = useState("Tümü");
+  const playerFavorites = allFavorites.filter((f: PlayerFavorite) => f.player_id === profilePlayer.id);
+  const playerEuroPredictions = euroPredictions.filter((p: EuroPrediction) => p.player_id === profilePlayer.id);
+  const playerPred = (matchId: string) => allPredictions.find((p: ScorePrediction) => p.player_id === profilePlayer.id && p.match_id === matchId);
+  const badges = badgeCountsForPlayer(profilePlayer.id, activeMatches, allPredictions, playerFavorites);
+  const completed = activeMatches.filter(isPlayed).sort((a: Match, b: Match) => new Date(b.match_time).getTime() - new Date(a.match_time).getTime());
+  const filteredHistory = completed
+    .filter((m: Match) => historyWeek === "Son 5" || Number(m.week_no || 1) === Number(historyWeek))
+    .filter((m: Match) => historyLeague === "Tümü" || m.league === historyLeague)
+    .filter((m: Match) => {
+      if (historyResult === "Tümü") return true;
+      const pred = playerPred(m.id);
+      const s = scorePrediction(pred, m, playerFavorites);
+      if (historyResult === "Tam skor") return s.exact;
+      if (historyResult === "Doğru sonuç") return s.resultCorrect && !s.exact;
+      if (historyResult === "Yanlış") return pred && !s.resultCorrect;
+      if (historyResult === "Tahmin yok") return !pred;
+      return true;
+    });
+  const shownHistory = historyWeek === "Son 5" && historyLeague === "Tümü" && historyResult === "Tümü" ? filteredHistory.slice(0, 5) : filteredHistory;
+  const allTeamNames = Array.from(new Set(leagueTeams.map((t: LeagueTeam) => t.team_name))).sort((a, b) => String(a).localeCompare(String(b), "tr-TR"));
+  const weeks = Array.from(new Set(activeMatches.map((m: Match) => Number(m.week_no || 1)).filter(Boolean))).sort((a:any,b:any)=>a-b);
+
   return (
-    <div className="grid gap-5 lg:grid-cols-2">
+    <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
       <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100">
-        <h2 className="text-xl font-black">👤 Profil</h2>
-        <p className="mt-1 text-sm text-slate-500">{currentPlayer.name} • {selectedSeason?.name}</p>
+        <div className="rounded-[1.5rem] bg-gradient-to-br from-emerald-50 to-orange-50 p-5 ring-1 ring-emerald-100">
+          <div className="text-xs font-black uppercase tracking-wider text-emerald-600">ORS Kahvaltı Ligi Oyuncu Kartı</div>
+          <h2 className="mt-2 text-3xl font-black text-slate-900">{profilePlayer.name}</h2>
+          <p className="mt-1 text-sm font-semibold text-slate-500">{selectedSeason?.name}</p>
+          <div className="mt-4 rounded-2xl bg-white/70 p-3 text-sm font-bold text-slate-700">
+            ❤️ Tuttuğu takım: {profilePlayer.heart_team ? <span className="font-black text-orange-600">{profilePlayer.heart_team}</span> : <span className="text-slate-400">Henüz seçilmedi</span>}
+          </div>
+          {isOwnProfile ? (
+            <select value={profilePlayer.heart_team || ""} onChange={(e) => saveHeartTeam(e.target.value)} className="mt-3 w-full rounded-2xl border border-emerald-100 bg-white px-3 py-2 text-sm font-bold">
+              <option value="">Tuttuğun takım seç, opsiyonel</option>
+              {allTeamNames.map((name: string) => <option key={name}>{name}</option>)}
+            </select>
+          ) : null}
+        </div>
+
+        <h3 className="mt-6 font-black">🏅 Rozet vitrini</h3>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {Object.entries(badges).length ? Object.entries(badges).map(([name, count]) => (
+            <span key={name} className="rounded-full bg-orange-100 px-3 py-1 text-xs font-black text-orange-700">{name} x{count as number}</span>
+          )) : <span className="rounded-2xl bg-slate-50 px-3 py-2 text-sm font-bold text-slate-400">Henüz rozet yok; top çizgiden döndü.</span>}
+        </div>
 
         <h3 className="mt-6 font-black">Lig favorileri</h3>
-        <p className="mt-1 text-sm text-slate-500">Favori takımın maçta oynarsa ve sonucu doğru bilirsen +1. Lig şampiyonu olursa sezon sonunda +20.</p>
+        <p className="mt-1 text-sm text-slate-500">Favori takım maçında doğru sonuç +1. Lig şampiyonu olursa +20.</p>
         <div className="mt-4 grid gap-3">
           {REQUIRED_FAVORITE_LEAGUES.map((league) => {
-            const fav = favorites.find((f: PlayerFavorite) => f.league === league);
+            const fav = playerFavorites.find((f: PlayerFavorite) => f.league === league);
             const locked = isFavoriteLeagueLocked(league);
             return (
               <div key={league} className="rounded-2xl border border-slate-100 p-3">
                 <div className="mb-2 flex justify-between text-sm font-black"><span>{league}</span><span className={locked ? "text-slate-400" : "text-green-600"}>{locked ? "Kilitli" : "Açık"}</span></div>
-                <select disabled={locked} value={fav?.team_name || ""} onChange={(e) => saveFavorite(league, e.target.value)} className="w-full rounded-2xl border border-slate-200 px-3 py-2 font-bold disabled:bg-slate-100">
-                  <option value="">Favori seç</option>
-                  {teamOptions(league).map((t: LeagueTeam) => <option key={t.id}>{t.team_name}</option>)}
-                </select>
+                {isOwnProfile ? (
+                  <select disabled={locked} value={fav?.team_name || ""} onChange={(e) => saveFavorite(league, e.target.value)} className="w-full rounded-2xl border border-slate-200 px-3 py-2 font-bold disabled:bg-slate-100">
+                    <option value="">Favori seç</option>
+                    {teamOptions(league).map((t: LeagueTeam) => <option key={t.id}>{t.team_name}</option>)}
+                  </select>
+                ) : <div className="text-sm font-black text-slate-700">{fav?.team_name || "Seçilmedi"}</div>}
+              </div>
+            );
+          })}
+        </div>
+
+        <h3 className="mt-6 font-black">🏆 Avrupa kupası şampiyon tahminleri</h3>
+        <div className="mt-4 grid gap-3">
+          {EURO_COMPETITIONS.map((comp) => {
+            const pred = playerEuroPredictions.find((p: EuroPrediction) => p.competition === comp.name);
+            const locked = isEuroLocked(comp.name);
+            const options = teamOptions(comp.name);
+            return (
+              <div key={comp.name} className="rounded-2xl border border-slate-100 p-3">
+                <div className="mb-2 flex justify-between text-sm font-black"><span>{comp.name} +{comp.points}</span><span className={locked ? "text-slate-400" : "text-green-600"}>{locked ? "Kilitli" : "Açık"}</span></div>
+                {isOwnProfile ? (
+                  <select disabled={locked} value={pred?.team_name || ""} onChange={(e) => saveEuroPrediction(comp.name, e.target.value)} className="w-full rounded-2xl border border-slate-200 px-3 py-2 font-bold disabled:bg-slate-100">
+                    <option value="">Şampiyon seç</option>
+                    {options.map((t: LeagueTeam) => <option key={t.id}>{t.team_name}</option>)}
+                  </select>
+                ) : <div className="text-sm font-black text-slate-700">{pred?.team_name || "Seçilmedi"}</div>}
               </div>
             );
           })}
@@ -1373,39 +1595,29 @@ function ProfileTab({ currentPlayer, selectedSeason, favorites, euroPredictions,
       </section>
 
       <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100">
-        <h2 className="text-xl font-black">🏆 Avrupa kupası şampiyon tahminleri</h2>
-        <p className="mt-1 text-sm text-slate-500">Lig aşaması başladığı anda kilitlenir. Haftalık +1 favori bonusundan ayrıdır.</p>
-        <div className="mt-4 grid gap-3">
-          {EURO_COMPETITIONS.map((comp) => {
-            const pred = euroPredictions.find((p: EuroPrediction) => p.competition === comp.name);
-            const locked = isEuroLocked(comp.name);
-            const options = teamOptions(comp.name);
-            return (
-              <div key={comp.name} className="rounded-2xl border border-slate-100 p-3">
-                <div className="mb-2 flex justify-between text-sm font-black"><span>{comp.name} +{comp.points}</span><span className={locked ? "text-slate-400" : "text-green-600"}>{locked ? "Kilitli" : "Açık"}</span></div>
-                <select disabled={locked} value={pred?.team_name || ""} onChange={(e) => saveEuroPrediction(comp.name, e.target.value)} className="w-full rounded-2xl border border-slate-200 px-3 py-2 font-bold disabled:bg-slate-100">
-                  <option value="">Şampiyon seç</option>
-                  {options.map((t: LeagueTeam) => <option key={t.id}>{t.team_name}</option>)}
-                </select>
-                {!options.length ? <div className="mt-2 text-xs text-amber-600">Admin bu kupa için takım ekleyince seçim açılır.</div> : null}
-              </div>
-            );
-          })}
+        <h2 className="text-xl font-black">📋 Sonuçlanmış tahmin geçmişi</h2>
+        <p className="mt-1 text-sm text-slate-500">Varsayılan son 5 maç; filtre seçince tüm eşleşen sonuçlar görünür.</p>
+        <div className="mt-4 grid gap-2 md:grid-cols-3">
+          <select value={historyWeek} onChange={(e)=>setHistoryWeek(e.target.value)} className="rounded-2xl border border-slate-200 px-3 py-2 text-sm font-bold"><option>Son 5</option>{weeks.map((w:number)=><option key={w} value={w}>Hafta {w}</option>)}</select>
+          <select value={historyLeague} onChange={(e)=>setHistoryLeague(e.target.value)} className="rounded-2xl border border-slate-200 px-3 py-2 text-sm font-bold"><option>Tümü</option>{LEAGUES.map((l)=><option key={l}>{l}</option>)}</select>
+          <select value={historyResult} onChange={(e)=>setHistoryResult(e.target.value)} className="rounded-2xl border border-slate-200 px-3 py-2 text-sm font-bold"><option>Tümü</option><option>Tam skor</option><option>Doğru sonuç</option><option>Yanlış</option><option>Tahmin yok</option></select>
         </div>
-
-        <h3 className="mt-6 font-black">Tahmin dökümüm</h3>
-        <div className="mt-3 max-h-[420px] overflow-auto rounded-2xl border border-slate-100">
-          {activeMatches.filter(isStarted).map((match: Match) => {
-            const pred = predictionFor(match.id);
+        <div className="mt-4 grid gap-3">
+          {shownHistory.map((match: Match) => {
+            const pred = playerPred(match.id);
             const s = scorePrediction(pred, match, playerFavorites);
             return (
-              <div key={match.id} className="border-b border-slate-100 p-3 text-sm last:border-b-0">
-                <div className="font-black">{match.home_team} - {match.away_team}</div>
-                <div className="text-slate-500">Tahmin: {pred ? `${pred.home_goals}-${pred.away_goals}` : "YOK"} • Puan: {isPlayed(match) ? s.total : "sonuç bekleniyor"}</div>
-                <div className="text-xs text-slate-400">{s.detail}</div>
+              <div key={match.id} className="rounded-2xl border border-slate-100 p-3 text-sm">
+                <div className="flex flex-wrap justify-between gap-2">
+                  <div className="font-black">Hafta {match.week_no || 1} • {match.home_team} - {match.away_team}</div>
+                  <div className="font-black text-orange-600">{match.home_score}-{match.away_score}</div>
+                </div>
+                <div className="mt-1 text-slate-500">Tahmin: {pred ? `${pred.home_goals}-${pred.away_goals}` : "YOK"} {pred?.is_joker ? "🃏" : ""} • Puan: {s.total}</div>
+                <div className="mt-1 text-xs text-slate-400">{s.detail}</div>
               </div>
             );
           })}
+          {!shownHistory.length ? <div className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-400">Gösterilecek sonuçlanmış tahmin yok.</div> : null}
         </div>
       </section>
     </div>
@@ -1495,7 +1707,7 @@ function Notice({ title, text }: any) {
   return <div className="rounded-[2rem] bg-white p-8 text-center shadow-xl ring-1 ring-orange-100"><h2 className="text-2xl font-black">{title}</h2><p className="mt-2 text-slate-500">{text}</p></div>;
 }
 
-function AdminTab({ selectedSeason, seasons, activeWeek, leagueTeams, players, matches, leagueWinners, reload, setMessage }: any) {
+function AdminTab({ selectedSeason, seasons, activeWeek, leagueTeams, players, matches, leagueWinners, adminPoints, reload, setMessage }: any) {
   const [adminTab, setAdminTab] = useState("matches");
   const [newMatch, setNewMatch] = useState({ week_no: activeWeek, match_time: "", home_team: "", away_team: "", league: "Süper Lig", match_type: "Normal", cup_name: "", is_knockout: false, tie_leg: "none" });
   const [csvText, setCsvText] = useState("");
@@ -1508,30 +1720,64 @@ function AdminTab({ selectedSeason, seasons, activeWeek, leagueTeams, players, m
   const [newPlayerName, setNewPlayerName] = useState("");
   const [winnerLeague, setWinnerLeague] = useState("Süper Lig");
   const [winnerTeam, setWinnerTeam] = useState("");
+  const [adminWeekFilter, setAdminWeekFilter] = useState<number | "Tümü">("Tümü");
+  const [adminLeagueFilter, setAdminLeagueFilter] = useState("Tümü");
+  const [adminStatusFilter, setAdminStatusFilter] = useState("Tümü");
+  const [editingMatch, setEditingMatch] = useState<Match | null>(null);
+  const [bonusPlayerId, setBonusPlayerId] = useState(players[0]?.id || "");
+  const [bonusType, setBonusType] = useState("Bonus");
+  const [bonusPoints, setBonusPoints] = useState(0);
+  const [bonusDescription, setBonusDescription] = useState("");
+  const [bonusWeek, setBonusWeek] = useState<number | "">(activeWeek || 1);
+  const [showAllBonus, setShowAllBonus] = useState(false);
+
+  const adminWeeks = Array.from(new Set(matches.map((m: Match) => Number(m.week_no || 1)).filter(Boolean))).sort((a:number,b:number)=>a-b);
+  const adminFilteredMatches = matches
+    .filter((m: Match) => adminWeekFilter === "Tümü" || Number(m.week_no || 1) === adminWeekFilter)
+    .filter((m: Match) => adminLeagueFilter === "Tümü" || m.league === adminLeagueFilter)
+    .filter((m: Match) => adminStatusFilter === "Tümü" || (m.match_status || "scheduled") === adminStatusFilter)
+    .sort((a: Match, b: Match) => new Date(a.match_time).getTime() - new Date(b.match_time).getTime());
 
   async function addMatch() {
     const { error } = await supabase.from("matches").insert({ ...newMatch, season_id: selectedSeason.id, is_published: true, match_status: "scheduled" });
     if (error) setMessage(error.message); else { setMessage("Maç eklendi ✅"); reload(); }
   }
 
-  async function saveResult(match: Match, home: number, away: number, status = "played", advancing?: string) {
-    const result = outcome(home, away);
-    const { error } = await supabase.from("matches").update({ home_score: home, away_score: away, result, match_status: status, advancing_team: advancing || match.advancing_team || null }).eq("id", match.id);
-    if (error) setMessage(error.message); else { setMessage("Sonuç kaydedildi ✅"); reload(); }
+  async function saveMatchEdit() {
+    if (!editingMatch) return;
+    const { id, home_team, away_team, match_time, league, week_no, match_type, cup_name, is_knockout, tie_leg } = editingMatch;
+    const { error } = await supabase.from("matches").update({
+      home_team,
+      away_team,
+      match_time,
+      league,
+      week_no,
+      match_type,
+      cup_name: cup_name || null,
+      is_knockout: Boolean(is_knockout),
+      tie_leg: tie_leg || "none",
+    }).eq("id", id);
+    if (error) setMessage(error.message); else { setEditingMatch(null); setMessage("Maç bilgileri güncellendi ✅"); reload(); }
+  }
+
+  async function saveResult(match: Match, home: number, away: number, status = "played", advancing?: string, adminNote?: string) {
+    const result = status === "played" || status === "forfeit" ? outcome(home, away) : null;
+    const { error } = await supabase.from("matches").update({
+      home_score: home,
+      away_score: away,
+      result,
+      match_status: status,
+      advancing_team: advancing || match.advancing_team || null,
+      admin_note: adminNote || null,
+    }).eq("id", match.id);
+    if (error) setMessage(error.message); else { setMessage("Sonuç/durum kaydedildi ✅"); reload(); }
   }
 
   async function deleteMatch(match: Match) {
     const ok = window.confirm(`${match.home_team} - ${match.away_team} maçını silmek istediğine emin misin? Bu maça ait tahminler de silinir.`);
     if (!ok) return;
-
     const { error } = await supabase.from("matches").delete().eq("id", match.id);
-    if (error) {
-      setMessage(error.message);
-      return;
-    }
-
-    setMessage("Maç silindi ✅");
-    reload();
+    if (error) setMessage(error.message); else { setMessage("Maç silindi ✅"); reload(); }
   }
 
   async function setActiveWeek(value: number) {
@@ -1540,20 +1786,13 @@ function AdminTab({ selectedSeason, seasons, activeWeek, leagueTeams, players, m
   }
 
   async function addTeam() {
-    const { error } = await supabase.from("league_teams").insert({
-      league: teamLeague,
-      team_name: teamName,
-      primary_color: teamPrimaryColor,
-      secondary_color: teamSecondaryColor,
-      text_color: teamTextColor,
-      logo_url: teamLogoUrl || null,
-    });
+    const { error } = await supabase.from("league_teams").insert({ league: teamLeague, team_name: teamName, primary_color: teamPrimaryColor, secondary_color: teamSecondaryColor, text_color: teamTextColor, logo_url: teamLogoUrl || null, manual_form: "" });
     if (error) setMessage(error.message); else { setTeamName(""); setTeamLogoUrl(""); setMessage("Takım eklendi ✅"); reload(); }
   }
 
   async function updateTeamLook(team: LeagueTeam, patch: Partial<LeagueTeam>) {
     const { error } = await supabase.from("league_teams").update(patch).eq("id", team.id);
-    if (error) setMessage(error.message); else { setMessage("Takım rengi güncellendi ✅"); reload(); }
+    if (error) setMessage(error.message); else { setMessage("Takım bilgisi güncellendi ✅"); reload(); }
   }
 
   async function addPlayer() {
@@ -1583,16 +1822,57 @@ function AdminTab({ selectedSeason, seasons, activeWeek, leagueTeams, players, m
     if (error) setMessage(error.message); else { setMessage(apply ? "Kazanan kaydedildi ve bonus aktif edildi ✅" : "Kazanan kaydedildi ✅"); reload(); }
   }
 
+  async function saveAdminPoint() {
+    if (!bonusPlayerId || !bonusDescription.trim()) {
+      setMessage("Oyuncu, puan ve açıklama gerekli.");
+      return;
+    }
+    const { error } = await supabase.from("admin_points").insert({
+      season_id: selectedSeason.id,
+      player_id: bonusPlayerId,
+      point_type: bonusType,
+      points: Number(bonusPoints),
+      description: bonusDescription.trim(),
+      week_no: bonusWeek === "" ? null : Number(bonusWeek),
+    });
+    if (error) setMessage(error.message); else { setMessage("Ek puan kaydedildi ✅"); setBonusDescription(""); setBonusPoints(0); reload(); }
+  }
+
+  const tabGroups = [
+    { title: "Maç Yönetimi", items: [["matches", "Maçlar"], ["results", "Sonuçlar"], ["csv", "CSV"]] },
+    { title: "Oyuncu Yönetimi", items: [["players", "Oyuncular"], ["bonus", "Ek Puan"]] },
+    { title: "Sezon Yönetimi", items: [["teams", "Takımlar"], ["season", "Sezon"]] },
+  ];
+
   return (
     <div className="grid gap-5">
-      <div className="flex flex-wrap gap-2 rounded-[2rem] bg-white p-2 shadow ring-1 ring-orange-100">
-        {["matches", "results", "csv", "teams", "players", "season"].map((x) => <button key={x} onClick={()=>setAdminTab(x)} className={cx("rounded-2xl px-4 py-2 text-sm font-black", adminTab===x?"bg-orange-500 text-white":"hover:bg-orange-100")}>{x}</button>)}
-      </div>
+      <section className="rounded-[2rem] bg-white p-4 shadow ring-1 ring-orange-100">
+        <h2 className="mb-3 text-lg font-black">Admin kontrol merkezi</h2>
+        <div className="grid gap-3 lg:grid-cols-3">
+          {tabGroups.map((group) => (
+            <div key={group.title} className="rounded-2xl bg-orange-50/60 p-3">
+              <div className="mb-2 text-xs font-black uppercase tracking-wider text-orange-500">{group.title}</div>
+              <div className="flex flex-wrap gap-2">
+                {group.items.map(([key, label]) => <button key={key} onClick={()=>setAdminTab(key)} className={cx("rounded-2xl px-4 py-2 text-sm font-black", adminTab===key?"bg-orange-500 text-white shadow":"bg-white text-slate-600 hover:bg-orange-100")}>{label}</button>)}
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {(adminTab === "matches" || adminTab === "results") && (
+        <section className="rounded-[2rem] bg-white p-4 shadow ring-1 ring-orange-100">
+          <div className="grid gap-2 md:grid-cols-3">
+            <select value={adminWeekFilter} onChange={e=>setAdminWeekFilter(e.target.value === "Tümü" ? "Tümü" : Number(e.target.value))} className="rounded-2xl border p-3 text-sm font-bold"><option>Tümü</option>{adminWeeks.map((w:number)=><option key={w} value={w}>Hafta {w}</option>)}</select>
+            <select value={adminLeagueFilter} onChange={e=>setAdminLeagueFilter(e.target.value)} className="rounded-2xl border p-3 text-sm font-bold"><option>Tümü</option>{LEAGUES.map(l=><option key={l}>{l}</option>)}</select>
+            <select value={adminStatusFilter} onChange={e=>setAdminStatusFilter(e.target.value)} className="rounded-2xl border p-3 text-sm font-bold"><option value="Tümü">Tümü</option><option value="scheduled">Oynanmadı</option><option value="played">Oynandı</option><option value="postponed">Ertelendi</option><option value="cancelled">İptal</option><option value="forfeit">Hükmen</option></select>
+          </div>
+        </section>
+      )}
 
       {adminTab === "matches" && (
         <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100">
-          <h2 className="text-xl font-black">Maç ekle / sil</h2>
-
+          <h2 className="text-xl font-black">Maç ekle / düzenle / sil</h2>
           <div className="mt-4 grid gap-3 md:grid-cols-3">
             <input type="number" value={newMatch.week_no} onChange={e=>setNewMatch({...newMatch, week_no:Number(e.target.value)})} className="rounded-2xl border p-3" placeholder="Hafta"/>
             <input value={newMatch.match_time} onChange={e=>setNewMatch({...newMatch, match_time:e.target.value})} className="rounded-2xl border p-3" placeholder="2026-08-14T21:30:00+03:00"/>
@@ -1600,48 +1880,74 @@ function AdminTab({ selectedSeason, seasons, activeWeek, leagueTeams, players, m
             <input value={newMatch.home_team} onChange={e=>setNewMatch({...newMatch, home_team:e.target.value})} className="rounded-2xl border p-3" placeholder="Ev sahibi"/>
             <input value={newMatch.away_team} onChange={e=>setNewMatch({...newMatch, away_team:e.target.value})} className="rounded-2xl border p-3" placeholder="Deplasman"/>
             <select value={newMatch.match_type} onChange={e=>setNewMatch({...newMatch, match_type:e.target.value})} className="rounded-2xl border p-3">{MATCH_TYPES.map(l=><option key={l}>{l}</option>)}</select>
+            <input value={newMatch.cup_name} onChange={e=>setNewMatch({...newMatch, cup_name:e.target.value})} className="rounded-2xl border p-3" placeholder="Kupa adı, opsiyonel"/>
             <select value={newMatch.tie_leg} onChange={e=>setNewMatch({...newMatch, tie_leg:e.target.value})} className="rounded-2xl border p-3"><option value="none">none</option><option value="single">single</option><option value="first">first</option><option value="second">second</option></select>
             <label className="flex items-center gap-2 font-bold"><input type="checkbox" checked={newMatch.is_knockout} onChange={e=>setNewMatch({...newMatch, is_knockout:e.target.checked})}/> Eleme/kupa</label>
             <AppButton onClick={addMatch}>Maç ekle</AppButton>
           </div>
 
-          <div className="mt-8">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="font-black">Bu sezondaki maçlar</h3>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-500">{matches.length} maç</span>
+          {editingMatch ? (
+            <div className="mt-6 rounded-[2rem] bg-slate-50 p-4 ring-1 ring-slate-100">
+              <h3 className="font-black">Düzenleniyor: {editingMatch.home_team} - {editingMatch.away_team}</h3>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                <input type="number" value={editingMatch.week_no || 1} onChange={e=>setEditingMatch({...editingMatch, week_no:Number(e.target.value)})} className="rounded-2xl border p-3" />
+                <input value={editingMatch.match_time || ""} onChange={e=>setEditingMatch({...editingMatch, match_time:e.target.value})} className="rounded-2xl border p-3" />
+                <select value={editingMatch.league || "Süper Lig"} onChange={e=>setEditingMatch({...editingMatch, league:e.target.value})} className="rounded-2xl border p-3">{LEAGUES.map(l=><option key={l}>{l}</option>)}</select>
+                <input value={editingMatch.home_team || ""} onChange={e=>setEditingMatch({...editingMatch, home_team:e.target.value})} className="rounded-2xl border p-3" />
+                <input value={editingMatch.away_team || ""} onChange={e=>setEditingMatch({...editingMatch, away_team:e.target.value})} className="rounded-2xl border p-3" />
+                <select value={editingMatch.match_type || "Normal"} onChange={e=>setEditingMatch({...editingMatch, match_type:e.target.value})} className="rounded-2xl border p-3">{MATCH_TYPES.map(l=><option key={l}>{l}</option>)}</select>
+                <input value={editingMatch.cup_name || ""} onChange={e=>setEditingMatch({...editingMatch, cup_name:e.target.value})} className="rounded-2xl border p-3" placeholder="Kupa adı" />
+                <select value={editingMatch.tie_leg || "none"} onChange={e=>setEditingMatch({...editingMatch, tie_leg:e.target.value})} className="rounded-2xl border p-3"><option value="none">none</option><option value="single">single</option><option value="first">first</option><option value="second">second</option></select>
+                <label className="flex items-center gap-2 font-bold"><input type="checkbox" checked={Boolean(editingMatch.is_knockout)} onChange={e=>setEditingMatch({...editingMatch, is_knockout:e.target.checked})}/> Eleme/kupa</label>
+              </div>
+              <div className="mt-3 flex gap-2"><AppButton onClick={saveMatchEdit}>Değişiklikleri kaydet</AppButton><AppButton kind="ghost" onClick={()=>setEditingMatch(null)}>Vazgeç</AppButton></div>
             </div>
+          ) : null}
 
+          <div className="mt-8">
+            <div className="flex items-center justify-between gap-3"><h3 className="font-black">Filtrelenen maçlar</h3><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-500">{adminFilteredMatches.length} maç</span></div>
             <div className="mt-3 grid gap-2">
-              {matches.length === 0 ? (
-                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">Henüz maç yok.</div>
-              ) : (
-                matches.map((m: Match) => (
-                  <div key={m.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-100 p-3">
-                    <div>
-                      <div className="font-black">{m.home_team} - {m.away_team}</div>
-                      <div className="mt-1 text-xs font-bold text-slate-500">
-                        Hafta {m.week_no || "-"} • {m.league || "-"} • {formatDate(m.match_time)} • {m.match_type || "Normal"}
-                      </div>
-                      {isPlayed(m) ? <div className="mt-1 text-xs font-black text-green-600">Sonuç girilmiş: {m.home_score} - {m.away_score}</div> : null}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => deleteMatch(m)}
-                      className="rounded-2xl bg-red-50 px-4 py-2 text-sm font-black text-red-600 hover:bg-red-100"
-                    >
-                      Sil
-                    </button>
+              {adminFilteredMatches.length === 0 ? <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">Maç yok.</div> : adminFilteredMatches.map((m: Match) => (
+                <div key={m.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-100 p-3">
+                  <div>
+                    <div className="font-black">{m.home_team} - {m.away_team}</div>
+                    <div className="mt-1 text-xs font-bold text-slate-500">Hafta {m.week_no || "-"} • {m.league || "-"} • {formatDate(m.match_time)} • {m.match_type || "Normal"} • {statusLabel(m.match_status)}</div>
+                    {m.admin_note ? <div className="mt-1 text-xs font-semibold text-slate-500">Not: {m.admin_note}</div> : null}
                   </div>
-                ))
-              )}
+                  <div className="flex gap-2"><AppButton kind="ghost" onClick={()=>setEditingMatch(m)}>Düzenle</AppButton><AppButton kind="danger" onClick={()=>deleteMatch(m)}>Sil</AppButton></div>
+                </div>
+              ))}
             </div>
           </div>
         </section>
       )}
 
-      {adminTab === "results" && <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100"><h2 className="text-xl font-black">Sonuç gir</h2><div className="mt-4 grid gap-3">{matches.map((m: Match)=><AdminResultRow key={m.id} match={m} saveResult={saveResult}/>)}</div></section>}
+      {adminTab === "results" && <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100"><h2 className="text-xl font-black">Sonuç gir / durum değiştir</h2><div className="mt-4 grid gap-3">{adminFilteredMatches.map((m: Match)=><AdminResultRow key={m.id} match={m} saveResult={saveResult}/>)}</div></section>}
 
       {adminTab === "csv" && <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100"><h2 className="text-xl font-black">CSV maç yükle</h2><p className="mt-1 text-sm text-slate-500">Format: week,match_time,home_team,away_team,league,match_type,cup_name,is_knockout,tie_leg</p><textarea value={csvText} onChange={e=>setCsvText(e.target.value)} className="mt-4 h-64 w-full rounded-2xl border p-4 font-mono text-sm" placeholder="week,match_time,home_team,away_team,league,match_type,cup_name,is_knockout,tie_leg"/><div className="mt-3"><AppButton onClick={importCsv}>Onayla ve tahmine aç</AppButton></div></section>}
+
+      {adminTab === "bonus" && (
+        <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100">
+          <h2 className="text-xl font-black">Ek puan / ceza / düzeltme</h2>
+          <div className="mt-4 grid gap-3 md:grid-cols-5">
+            <select value={bonusPlayerId} onChange={e=>setBonusPlayerId(e.target.value)} className="rounded-2xl border p-3"><option value="">Oyuncu seç</option>{players.map((p:Player)=><option key={p.id} value={p.id}>{p.name}</option>)}</select>
+            <select value={bonusType} onChange={e=>setBonusType(e.target.value)} className="rounded-2xl border p-3"><option>Bonus</option><option>Ceza</option><option>Düzeltme</option></select>
+            <input type="number" value={bonusPoints} onChange={e=>setBonusPoints(Number(e.target.value))} className="rounded-2xl border p-3" placeholder="+5 / -3" />
+            <input type="number" value={bonusWeek} onChange={e=>setBonusWeek(e.target.value === "" ? "" : Number(e.target.value))} className="rounded-2xl border p-3" placeholder="Hafta" />
+            <AppButton onClick={saveAdminPoint}>Kaydet</AppButton>
+            <input value={bonusDescription} onChange={e=>setBonusDescription(e.target.value)} className="rounded-2xl border p-3 md:col-span-5" placeholder="Açıklama: Eksik puan düzeltmesi / haftalık bonus vb." />
+          </div>
+
+          <div className="mt-6 flex items-center justify-between"><h3 className="font-black">Ek Puan Geçmişi</h3><AppButton kind="ghost" onClick={()=>setShowAllBonus(!showAllBonus)}>{showAllBonus ? "Son 10 kaydı göster" : "Tümünü göster"}</AppButton></div>
+          <div className="mt-3 grid gap-2">
+            {(showAllBonus ? adminPoints : adminPoints.slice(0, 10)).map((item: AdminPoint) => {
+              const player = players.find((p:Player)=>p.id===item.player_id);
+              return <div key={item.id} className="rounded-2xl border border-slate-100 p-3 text-sm"><b>{player?.name || "Oyuncu"}</b> • {item.point_type} • <span className={cx("font-black", item.points >= 0 ? "text-green-600" : "text-rose-600")}>{item.points > 0 ? "+" : ""}{item.points}</span> • Hafta {item.week_no || "-"}<div className="mt-1 text-xs text-slate-500">{item.description}</div></div>;
+            })}
+            {adminPoints.length === 0 ? <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-500">Ek puan kaydı yok.</div> : null}
+          </div>
+        </section>
+      )}
 
       {adminTab === "teams" && (
         <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100">
@@ -1657,11 +1963,12 @@ function AdminTab({ selectedSeason, seasons, activeWeek, leagueTeams, players, m
           </div>
           <div className="mt-5 grid gap-3">
             {leagueTeams.filter((t:LeagueTeam)=>t.league===teamLeague).map((t:LeagueTeam)=>(
-              <div key={t.id} className="grid gap-3 rounded-2xl border border-slate-100 p-3 md:grid-cols-[1fr_120px_120px_120px_auto] md:items-center">
+              <div key={t.id} className="grid gap-3 rounded-2xl border border-slate-100 p-3 md:grid-cols-[1fr_120px_120px_120px_150px_auto] md:items-center">
                 <TeamPill team={t} name={t.team_name} />
                 <label className="text-xs font-bold text-slate-500">Ana<input type="color" defaultValue={t.primary_color || "#64748b"} onBlur={e=>updateTeamLook(t,{primary_color:e.currentTarget.value})} className="mt-1 h-8 w-full"/></label>
                 <label className="text-xs font-bold text-slate-500">İkinci<input type="color" defaultValue={t.secondary_color || "#f8fafc"} onBlur={e=>updateTeamLook(t,{secondary_color:e.currentTarget.value})} className="mt-1 h-8 w-full"/></label>
                 <label className="text-xs font-bold text-slate-500">Yazı<input type="color" defaultValue={t.text_color || "#ffffff"} onBlur={e=>updateTeamLook(t,{text_color:e.currentTarget.value})} className="mt-1 h-8 w-full"/></label>
+                <input defaultValue={t.manual_form || ""} onBlur={e=>updateTeamLook(t,{manual_form:e.currentTarget.value})} className="rounded-2xl border p-2 text-xs" placeholder="Form: W W D L W"/>
                 <input defaultValue={t.logo_url || ""} onBlur={e=>updateTeamLook(t,{logo_url:e.currentTarget.value || null})} className="rounded-2xl border p-2 text-xs" placeholder="Logo URL"/>
               </div>
             ))}
@@ -1676,9 +1983,39 @@ function AdminTab({ selectedSeason, seasons, activeWeek, leagueTeams, players, m
   );
 }
 
+function statusLabel(status?: string | null) {
+  if (status === "played") return "Oynandı";
+  if (status === "postponed") return "Ertelendi";
+  if (status === "cancelled") return "İptal";
+  if (status === "forfeit") return "Hükmen";
+  return "Oynanmadı";
+}
+
 function AdminResultRow({ match, saveResult }: any) {
   const [home, setHome] = useState(match.home_score ?? 0);
   const [away, setAway] = useState(match.away_score ?? 0);
+  const [status, setStatus] = useState(match.match_status || "scheduled");
+  const [note, setNote] = useState(match.admin_note || "");
   const [adv, setAdv] = useState(match.advancing_team || "");
-  return <div className="rounded-2xl border border-slate-100 p-3"><div className="font-black">{match.home_team} - {match.away_team}</div><div className="mt-2 flex flex-wrap items-center gap-2"><select value={home} onChange={e=>setHome(Number(e.target.value))} className="rounded-xl border p-2">{GOAL_OPTIONS.map(g=><option key={g}>{g}</option>)}</select><span>-</span><select value={away} onChange={e=>setAway(Number(e.target.value))} className="rounded-xl border p-2">{GOAL_OPTIONS.map(g=><option key={g}>{g}</option>)}</select>{match.is_knockout?<select value={adv} onChange={e=>setAdv(e.target.value)} className="rounded-xl border p-2"><option value="">Turu geçen</option><option>{match.home_team}</option><option>{match.away_team}</option></select>:null}<AppButton onClick={()=>saveResult(match, home, away, "played", adv)}>Sonucu kaydet</AppButton></div></div>;
+
+  return (
+    <div className="rounded-2xl border border-slate-100 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="font-black">{match.home_team} - {match.away_team}</div>
+          <div className="text-xs font-bold text-slate-500">{formatDate(match.match_time)} • {statusLabel(status)}</div>
+        </div>
+        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-500">Hafta {match.week_no || "-"}</span>
+      </div>
+      <div className="mt-3 grid gap-2 md:grid-cols-[90px_30px_90px_160px_1fr_auto] md:items-center">
+        <select value={home} onChange={e=>setHome(Number(e.target.value))} className="rounded-xl border p-2">{GOAL_OPTIONS.map(g=><option key={g}>{g}</option>)}</select>
+        <span className="text-center font-black">-</span>
+        <select value={away} onChange={e=>setAway(Number(e.target.value))} className="rounded-xl border p-2">{GOAL_OPTIONS.map(g=><option key={g}>{g}</option>)}</select>
+        <select value={status} onChange={e=>setStatus(e.target.value)} className="rounded-xl border p-2"><option value="scheduled">Oynanmadı</option><option value="played">Oynandı</option><option value="postponed">Ertelendi</option><option value="cancelled">İptal</option><option value="forfeit">Hükmen</option></select>
+        {match.is_knockout ? <select value={adv} onChange={e=>setAdv(e.target.value)} className="rounded-xl border p-2"><option value="">Turu geçen</option><option>{match.home_team}</option><option>{match.away_team}</option></select> : <input value={note} onChange={e=>setNote(e.target.value)} className="rounded-xl border p-2" placeholder="Admin notu" />}
+        <AppButton onClick={()=>saveResult(match, home, away, status, adv, note)}>Kaydet</AppButton>
+      </div>
+      {match.is_knockout ? <input value={note} onChange={e=>setNote(e.target.value)} className="mt-2 w-full rounded-xl border p-2" placeholder="Admin notu" /> : null}
+    </div>
+  );
 }
