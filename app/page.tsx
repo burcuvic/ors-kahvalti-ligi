@@ -1525,7 +1525,9 @@ function ProfileTab({ currentPlayer, profilePlayer, isOwnProfile, selectedSeason
       return true;
     });
   const shownHistory = historyWeek === "Son 5" && historyLeague === "Tümü" && historyResult === "Tümü" ? filteredHistory.slice(0, 5) : filteredHistory;
-  const allTeamNames = Array.from(new Set(leagueTeams.map((t: LeagueTeam) => t.team_name))).sort((a, b) => String(a).localeCompare(String(b), "tr-TR"));
+  const allTeamNames: string[] = Array.from(new Set<string>(leagueTeams.map((t: LeagueTeam) => String(t.team_name || ""))))
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, "tr-TR"));
   const weeks = Array.from(new Set(activeMatches.map((m: Match) => Number(m.week_no || 1)).filter(Boolean))).sort((a:any,b:any)=>a-b);
 
   return (
@@ -1541,7 +1543,7 @@ function ProfileTab({ currentPlayer, profilePlayer, isOwnProfile, selectedSeason
           {isOwnProfile ? (
             <select value={profilePlayer.heart_team || ""} onChange={(e) => saveHeartTeam(e.target.value)} className="mt-3 w-full rounded-2xl border border-emerald-100 bg-white px-3 py-2 text-sm font-bold">
               <option value="">Tuttuğun takım seç, opsiyonel</option>
-              {allTeamNames.map((name: string) => <option key={name}>{name}</option>)}
+              {allTeamNames.map((name) => <option key={name} value={name}>{name}</option>)}
             </select>
           ) : null}
         </div>
