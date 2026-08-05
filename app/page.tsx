@@ -501,62 +501,53 @@ export default function Page() {
   async function loadAll() {
     setLoading(true);
     setMessage("");
+
+    const readTable = async (label: string, query: any) => {
+      const { data, error } = await query;
+      if (error) {
+        console.warn(`${label} okunamadı:`, error.message);
+        return [];
+      }
+      return data || [];
+    };
+
     try {
-      const [
-        playersRes,
-        seasonsRes,
-        matchesRes,
-        oldPredRes,
-        scorePredRes,
-        teamsRes,
-        favRes,
-        euroRes,
-        winnerRes,
-        settingsRes,
-        adminPointsRes,
-      ] = await Promise.all([
-        supabase.from("players").select("*").order("name"),
-        supabase.from("seasons").select("*").order("created_at"),
-        supabase.from("matches").select("*").order("match_time"),
-        supabase.from("predictions").select("*"),
-        supabase.from("score_predictions").select("*"),
-        supabase.from("league_teams").select("*").order("league").order("team_name"),
-        supabase.from("player_favorites").select("*"),
-        supabase.from("european_champion_predictions").select("*"),
-        supabase.from("league_winners").select("*"),
-        supabase.from("season_settings").select("*"),
-        supabase.from("admin_points").select("*").order("created_at", { ascending: false }),
-      ]);
+      const playersData = await readTable("players", supabase.from("players").select("*").order("name"));
+      const seasonsData = await readTable("seasons", supabase.from("seasons").select("*").order("created_at"));
+      const settingsData = await readTable("season_settings", supabase.from("season_settings").select("*"));
+      const matchesData = await readTable("matches", supabase.from("matches").select("*").order("match_time"));
+      const teamsData = await readTable("league_teams", supabase.from("league_teams").select("*").order("league").order("team_name"));
 
-      if (playersRes.error) throw playersRes.error;
-      if (seasonsRes.error) throw seasonsRes.error;
-      if (matchesRes.error) throw matchesRes.error;
-      if (oldPredRes.error) throw oldPredRes.error;
-      if (scorePredRes.error) throw scorePredRes.error;
-      if (teamsRes.error) throw teamsRes.error;
-      if (favRes.error) throw favRes.error;
-      if (euroRes.error) throw euroRes.error;
-      if (winnerRes.error) throw winnerRes.error;
-      if (settingsRes.error) throw settingsRes.error;
-      if (adminPointsRes.error) throw adminPointsRes.error;
+      // Bunlar yardımcı tablolar. Birinde hata olursa ana ekranı boşaltmasın.
+      const oldPredData = await readTable("predictions", supabase.from("predictions").select("*"));
+      const scorePredData = await readTable("score_predictions", supabase.from("score_predictions").select("*"));
+      const favData = await readTable("player_favorites", supabase.from("player_favorites").select("*"));
+      const euroData = await readTable("european_champion_predictions", supabase.from("european_champion_predictions").select("*"));
+      const winnerData = await readTable("league_winners", supabase.from("league_winners").select("*"));
+      const adminPointsData = await readTable("admin_points", supabase.from("admin_points").select("*").order("created_at", { ascending: false }));
 
-      setPlayers(playersRes.data || []);
-      setSeasons(seasonsRes.data || []);
-      setMatches(matchesRes.data || []);
-      setOldPredictions(oldPredRes.data || []);
-      setScorePredictions(scorePredRes.data || []);
-      setLeagueTeams(teamsRes.data || []);
-      setFavorites(favRes.data || []);
-      setEuroPredictions(euroRes.data || []);
-      setLeagueWinners(winnerRes.data || []);
-      setSeasonSettings(settingsRes.data || []);
-      setAdminPoints(adminPointsRes.data || []);
+      setPlayers(playersData as Player[]);
+      setSeasons(seasonsData as Season[]);
+      setMatches(matchesData as Match[]);
+      setLeagueTeams(teamsData as LeagueTeam[]);
+      setSeasonSettings(settingsData as SeasonSetting[]);
 
-      const active = (seasonsRes.data || []).find((s) => s.is_active) || (seasonsRes.data || [])[0];
+      setOldPredictions(oldPredData as OldPrediction[]);
+      setScorePredictions(scorePredData as ScorePrediction[]);
+      setFavorites(favData as PlayerFavorite[]);
+      setEuroPredictions(euroData as EuroPrediction[]);
+      setLeagueWinners(winnerData as LeagueWinner[]);
+      setAdminPoints(adminPointsData as AdminPoint[]);
+
+      const active = (seasonsData as Season[]).find((s) => s.is_active) || (seasonsData as Season[])[0];
       if (!selectedSeasonId && active) {
         setSelectedSeasonId(active.id);
-        const setting = (settingsRes.data || []).find((s) => s.season_id === active.id);
+        const setting = (settingsData as SeasonSetting[]).find((s) => s.season_id === active.id);
         setSelectedWeek(setting?.active_week || 1);
+      }
+
+      if (!(playersData as Player[]).length && !(teamsData as LeagueTeam[]).length) {
+        setMessage("Veriler boş görünüyor. Supabase tabloları veya RLS izinleri kontrol edilmeli.");
       }
     } catch (error: any) {
       setMessage(error?.message || "Veriler yüklenirken hata oluştu.");
