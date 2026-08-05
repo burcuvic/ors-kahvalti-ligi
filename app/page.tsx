@@ -83,6 +83,10 @@ type LeagueTeam = {
   league: string;
   team_name: string;
   is_active?: boolean | null;
+  primary_color?: string | null;
+  secondary_color?: string | null;
+  text_color?: string | null;
+  logo_url?: string | null;
 };
 
 type PlayerFavorite = {
@@ -168,6 +172,36 @@ const GOAL_OPTIONS = Array.from({ length: 10 }, (_, i) => i);
 
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
+}
+
+function getTeamStyle(team?: LeagueTeam | null) {
+  return {
+    background: team?.primary_color || "#fff7ed",
+    color: team?.text_color || "#7c2d12",
+    borderColor: team?.secondary_color || "#fed7aa",
+  };
+}
+
+function TeamPill({ team, name }: { team?: LeagueTeam | null; name: string }) {
+  return (
+    <span
+      className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-black shadow-sm"
+      style={getTeamStyle(team)}
+    >
+      <span
+        className="h-3 w-3 rounded-full border border-white/70"
+        style={{ background: team?.secondary_color || "#fb923c" }}
+      />
+      {team?.logo_url ? <img src={team.logo_url} alt="" className="h-4 w-4 rounded-full object-contain" /> : null}
+      {name}
+    </span>
+  );
+}
+
+function findTeam(leagueTeams: LeagueTeam[], name?: string | null, league?: string | null) {
+  const n = normalize(name);
+  return leagueTeams.find((t) => normalize(t.team_name) === n && (!league || t.league === league))
+    || leagueTeams.find((t) => normalize(t.team_name) === n);
 }
 
 function formatDate(value?: string | null) {
@@ -533,7 +567,7 @@ export default function Page() {
       return;
     }
     setCurrentPlayer(player);
-    setIsAdminMode(Boolean(player.is_admin));
+    setIsAdminMode(false);
     setTab("dashboard");
     setMessage(`Hoş geldin ${player.name} ⚽`);
   }
@@ -802,7 +836,7 @@ export default function Page() {
         </header>
 
         {!currentPlayer && !isAdminMode ? (
-          <section className="grid gap-4 lg:grid-cols-2">
+          <section className="grid gap-4">
             <div className="rounded-[2rem] bg-white p-6 shadow-xl ring-1 ring-orange-100">
               <h2 className="text-xl font-black">Oyuncu girişi</h2>
               <p className="mt-1 text-sm text-slate-500">İsim + kişisel giriş kodu ile tahmin ekranına gir.</p>
@@ -810,15 +844,6 @@ export default function Page() {
                 <input value={loginName} onChange={(e) => setLoginName(e.target.value)} placeholder="Adın" className="rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-400" />
                 <input value={loginCode} onChange={(e) => setLoginCode(e.target.value)} placeholder="Giriş kodu" className="rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-400" />
                 <AppButton onClick={login}>Giriş yap</AppButton>
-              </div>
-            </div>
-
-            <div className="rounded-[2rem] bg-white p-6 shadow-xl ring-1 ring-orange-100">
-              <h2 className="text-xl font-black">Admin girişi</h2>
-              <p className="mt-1 text-sm text-slate-500">Maç, sonuç, takım, aktif hafta ve sezon yönetimi.</p>
-              <div className="mt-5 grid gap-3">
-                <input value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} placeholder="Admin şifresi" type="password" className="rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-400" />
-                <AppButton onClick={adminLogin}>Admin modunu aç</AppButton>
               </div>
             </div>
           </section>
@@ -836,7 +861,7 @@ export default function Page() {
                 ["teams", "🏟️ Takımlar"],
                 ["stats", "📊 İstatistikler"],
                 ["rules", "📜 Kurallar"],
-                ...(isAdminMode ? [["admin", "⚙️ Admin"]] : []),
+                ...(((currentPlayer?.is_admin || normalize(currentPlayer?.name) === "burcu" || isAdminMode)) ? [["admin", isAdminMode ? "⚙️ Admin" : "🔐 Admin"]] : []),
               ].map(([key, label]) => (
                 <button
                   key={key}
@@ -864,6 +889,7 @@ export default function Page() {
                     selectedSeason={selectedSeason}
                     activeWeek={activeWeek}
                     activeMatches={activeMatches}
+                    leagueTeams={leagueTeams}
                   />
                 )}
                 {tab === "predict" && (
@@ -883,6 +909,7 @@ export default function Page() {
                     predictions={currentScorePredictions}
                     savePrediction={savePrediction}
                     activeMatches={activeMatches}
+                    leagueTeams={leagueTeams}
                   />
                 )}
                 {tab === "matches" && (
@@ -901,6 +928,7 @@ export default function Page() {
                     oldPredictions={oldPredictions}
                     isArchive={Boolean(isArchive)}
                     visibilityText={predictionVisibilityText}
+                    leagueTeams={leagueTeams}
                   />
                 )}
                 {tab === "profile" && currentPlayer && (
@@ -923,6 +951,16 @@ export default function Page() {
                 {tab === "teams" && <TeamsTab leagueTeams={leagueTeams} />}
                 {tab === "stats" && <StatsTab scoreRows={scoreRows} activeMatches={activeMatches} predictions={currentScorePredictions} favorites={currentFavorites} players={activePlayers} />}
                 {tab === "rules" && <RulesTab />}
+                {tab === "admin" && (currentPlayer?.is_admin || normalize(currentPlayer?.name) === "burcu") && !isAdminMode && (
+                  <section className="rounded-[2rem] bg-white p-6 shadow-xl ring-1 ring-orange-100">
+                    <h2 className="text-xl font-black">🔐 Admin kilidi</h2>
+                    <p className="mt-1 text-sm text-slate-500">Burcu hesabındasın; admin paneli için ikinci şifreyi gir.</p>
+                    <div className="mt-5 grid gap-3 md:grid-cols-[1fr_auto]">
+                      <input value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} placeholder="Admin şifresi" type="password" className="rounded-2xl border border-slate-200 px-4 py-3 outline-none focus:border-orange-400" />
+                      <AppButton onClick={adminLogin}>Admin panelini aç</AppButton>
+                    </div>
+                  </section>
+                )}
                 {tab === "admin" && isAdminMode && selectedSeason && (
                   <AdminTab
                     selectedSeason={selectedSeason}
@@ -1028,7 +1066,7 @@ function Filters({ selectedWeek, setSelectedWeek, weeks, leagueFilter, setLeague
 }
 
 function PredictTab(props: any) {
-  const { isArchive, isClosed, currentPlayer, favoriteComplete, visibleMatches, predictions, savePrediction, activeMatches } = props;
+  const { isArchive, isClosed, currentPlayer, favoriteComplete, visibleMatches, predictions, savePrediction, activeMatches, leagueTeams } = props;
   if (isArchive) return <Notice title="Arşiv sezonu" text="Bu sezon kapalı. Eski tahminler Maçlar ekranında görüntülenir." />;
   if (!currentPlayer) return <Notice title="Giriş gerekli" text="Tahmin yapmak için oyuncu girişi yapmalısın." />;
   if (isClosed) return <Notice title="Sezon kapalı" text="Sezon kapatıldığı için yeni tahmin alınmıyor." />;
@@ -1048,19 +1086,21 @@ function PredictTab(props: any) {
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
         {visibleMatches.map((match: Match) => (
-          <PredictionCard key={match.id} match={match} prediction={predictions.find((p: ScorePrediction) => p.player_id === currentPlayer.id && p.match_id === match.id)} savePrediction={savePrediction} />
+          <PredictionCard key={match.id} match={match} prediction={predictions.find((p: ScorePrediction) => p.player_id === currentPlayer.id && p.match_id === match.id)} savePrediction={savePrediction} leagueTeams={leagueTeams} />
         ))}
       </div>
     </div>
   );
 }
 
-function PredictionCard({ match, prediction, savePrediction }: any) {
+function PredictionCard({ match, prediction, savePrediction, leagueTeams }: any) {
   const [home, setHome] = useState<number>(prediction?.home_goals ?? 0);
   const [away, setAway] = useState<number>(prediction?.away_goals ?? 0);
   const [advancing, setAdvancing] = useState<string>(prediction?.advancing_team || "");
   const [joker, setJoker] = useState<boolean>(Boolean(prediction?.is_joker));
   const locked = isStarted(match);
+  const homeTeamLook = findTeam(leagueTeams || [], match.home_team, match.league);
+  const awayTeamLook = findTeam(leagueTeams || [], match.away_team, match.league);
 
   useEffect(() => {
     setHome(prediction?.home_goals ?? 0);
@@ -1081,7 +1121,11 @@ function PredictionCard({ match, prediction, savePrediction }: any) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-xs font-black uppercase text-orange-400">Hafta {match.week_no || 1} • {match.league || "Lig yok"} • {match.match_type || "Normal"}</div>
-          <h3 className="mt-2 text-xl font-black">{match.home_team} - {match.away_team}</h3>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <TeamPill team={homeTeamLook} name={match.home_team} />
+            <span className="font-black text-slate-400">-</span>
+            <TeamPill team={awayTeamLook} name={match.away_team} />
+          </div>
           <div className="text-sm text-slate-500">{formatDate(match.match_time)}</div>
         </div>
         <span className={cx("rounded-2xl px-3 py-1 text-xs font-black", locked ? "bg-slate-200 text-slate-500" : "bg-green-100 text-green-700")}>{locked ? "Kilitli" : "Açık"}</span>
@@ -1129,17 +1173,24 @@ function PredictionCard({ match, prediction, savePrediction }: any) {
 }
 
 function MatchesTab(props: any) {
-  const { visibleMatches, players, predictions, favorites, isArchive, oldPredictions, visibilityText } = props;
+  const { visibleMatches, players, predictions, favorites, isArchive, oldPredictions, visibilityText, leagueTeams } = props;
   return (
     <div>
       <Filters {...props} />
       <div className="grid gap-4">
-        {visibleMatches.map((match: Match) => (
+        {visibleMatches.map((match: Match) => {
+          const homeTeamLook = findTeam(leagueTeams || [], match.home_team, match.league);
+          const awayTeamLook = findTeam(leagueTeams || [], match.away_team, match.league);
+          return (
           <div key={match.id} className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100">
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>
                 <div className="text-xs font-black uppercase text-orange-400">Hafta {match.week_no || 1} • {match.league || "-"} • {match.match_type || "Normal"}</div>
-                <h3 className="mt-1 text-xl font-black">{match.home_team} - {match.away_team}</h3>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <TeamPill team={homeTeamLook} name={match.home_team} />
+                  <span className="font-black text-slate-400">-</span>
+                  <TeamPill team={awayTeamLook} name={match.away_team} />
+                </div>
                 <p className="text-sm text-slate-500">{formatDate(match.match_time)} • {visibilityText(match)}</p>
               </div>
               <div className="rounded-2xl bg-slate-100 px-4 py-2 text-center font-black">
@@ -1169,7 +1220,8 @@ function MatchesTab(props: any) {
               </div>
             )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1267,7 +1319,7 @@ function TeamsTab({ leagueTeams }: any) {
         <section key={group.league} className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100">
           <h2 className="text-xl font-black">{group.league}</h2>
           <div className="mt-3 flex flex-wrap gap-2">
-            {group.teams.map((team: LeagueTeam) => <span key={team.id} className="rounded-full bg-orange-50 px-3 py-1 text-sm font-bold text-orange-700">{team.team_name}</span>)}
+            {group.teams.map((team: LeagueTeam) => <TeamPill key={team.id} team={team} name={team.team_name} />)}
           </div>
         </section>
       ))}
@@ -1330,6 +1382,10 @@ function AdminTab({ selectedSeason, seasons, activeWeek, leagueTeams, players, m
   const [csvText, setCsvText] = useState("");
   const [teamLeague, setTeamLeague] = useState("Süper Lig");
   const [teamName, setTeamName] = useState("");
+  const [teamPrimaryColor, setTeamPrimaryColor] = useState("#64748b");
+  const [teamSecondaryColor, setTeamSecondaryColor] = useState("#f8fafc");
+  const [teamTextColor, setTeamTextColor] = useState("#ffffff");
+  const [teamLogoUrl, setTeamLogoUrl] = useState("");
   const [newPlayerName, setNewPlayerName] = useState("");
   const [winnerLeague, setWinnerLeague] = useState("Süper Lig");
   const [winnerTeam, setWinnerTeam] = useState("");
@@ -1365,8 +1421,20 @@ function AdminTab({ selectedSeason, seasons, activeWeek, leagueTeams, players, m
   }
 
   async function addTeam() {
-    const { error } = await supabase.from("league_teams").insert({ league: teamLeague, team_name: teamName });
-    if (error) setMessage(error.message); else { setTeamName(""); setMessage("Takım eklendi ✅"); reload(); }
+    const { error } = await supabase.from("league_teams").insert({
+      league: teamLeague,
+      team_name: teamName,
+      primary_color: teamPrimaryColor,
+      secondary_color: teamSecondaryColor,
+      text_color: teamTextColor,
+      logo_url: teamLogoUrl || null,
+    });
+    if (error) setMessage(error.message); else { setTeamName(""); setTeamLogoUrl(""); setMessage("Takım eklendi ✅"); reload(); }
+  }
+
+  async function updateTeamLook(team: LeagueTeam, patch: Partial<LeagueTeam>) {
+    const { error } = await supabase.from("league_teams").update(patch).eq("id", team.id);
+    if (error) setMessage(error.message); else { setMessage("Takım rengi güncellendi ✅"); reload(); }
   }
 
   async function addPlayer() {
@@ -1456,7 +1524,31 @@ function AdminTab({ selectedSeason, seasons, activeWeek, leagueTeams, players, m
 
       {adminTab === "csv" && <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100"><h2 className="text-xl font-black">CSV maç yükle</h2><p className="mt-1 text-sm text-slate-500">Format: week,match_time,home_team,away_team,league,match_type,cup_name,is_knockout,tie_leg</p><textarea value={csvText} onChange={e=>setCsvText(e.target.value)} className="mt-4 h-64 w-full rounded-2xl border p-4 font-mono text-sm" placeholder="week,match_time,home_team,away_team,league,match_type,cup_name,is_knockout,tie_leg"/><div className="mt-3"><AppButton onClick={importCsv}>Onayla ve tahmine aç</AppButton></div></section>}
 
-      {adminTab === "teams" && <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100"><h2 className="text-xl font-black">Takımlar</h2><div className="mt-4 flex flex-wrap gap-2"><select value={teamLeague} onChange={e=>setTeamLeague(e.target.value)} className="rounded-2xl border p-3">{LEAGUES.map(l=><option key={l}>{l}</option>)}</select><input value={teamName} onChange={e=>setTeamName(e.target.value)} className="rounded-2xl border p-3" placeholder="Takım adı"/><AppButton onClick={addTeam}>Ekle</AppButton></div><div className="mt-4 flex flex-wrap gap-2">{leagueTeams.filter((t:LeagueTeam)=>t.league===teamLeague).map((t:LeagueTeam)=><span key={t.id} className="rounded-full bg-orange-50 px-3 py-1 text-sm font-bold text-orange-700">{t.team_name}</span>)}</div></section>}
+      {adminTab === "teams" && (
+        <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100">
+          <h2 className="text-xl font-black">Takımlar & renkler</h2>
+          <div className="mt-4 grid gap-3 md:grid-cols-4">
+            <select value={teamLeague} onChange={e=>setTeamLeague(e.target.value)} className="rounded-2xl border p-3">{LEAGUES.map(l=><option key={l}>{l}</option>)}</select>
+            <input value={teamName} onChange={e=>setTeamName(e.target.value)} className="rounded-2xl border p-3" placeholder="Takım adı"/>
+            <label className="rounded-2xl border p-3 text-xs font-bold text-slate-500">Ana renk<input type="color" value={teamPrimaryColor} onChange={e=>setTeamPrimaryColor(e.target.value)} className="mt-1 h-9 w-full"/></label>
+            <label className="rounded-2xl border p-3 text-xs font-bold text-slate-500">İkinci renk<input type="color" value={teamSecondaryColor} onChange={e=>setTeamSecondaryColor(e.target.value)} className="mt-1 h-9 w-full"/></label>
+            <label className="rounded-2xl border p-3 text-xs font-bold text-slate-500">Yazı rengi<input type="color" value={teamTextColor} onChange={e=>setTeamTextColor(e.target.value)} className="mt-1 h-9 w-full"/></label>
+            <input value={teamLogoUrl} onChange={e=>setTeamLogoUrl(e.target.value)} className="rounded-2xl border p-3 md:col-span-2" placeholder="Logo URL, opsiyonel"/>
+            <AppButton onClick={addTeam}>Ekle</AppButton>
+          </div>
+          <div className="mt-5 grid gap-3">
+            {leagueTeams.filter((t:LeagueTeam)=>t.league===teamLeague).map((t:LeagueTeam)=>(
+              <div key={t.id} className="grid gap-3 rounded-2xl border border-slate-100 p-3 md:grid-cols-[1fr_120px_120px_120px_auto] md:items-center">
+                <TeamPill team={t} name={t.team_name} />
+                <label className="text-xs font-bold text-slate-500">Ana<input type="color" defaultValue={t.primary_color || "#64748b"} onBlur={e=>updateTeamLook(t,{primary_color:e.currentTarget.value})} className="mt-1 h-8 w-full"/></label>
+                <label className="text-xs font-bold text-slate-500">İkinci<input type="color" defaultValue={t.secondary_color || "#f8fafc"} onBlur={e=>updateTeamLook(t,{secondary_color:e.currentTarget.value})} className="mt-1 h-8 w-full"/></label>
+                <label className="text-xs font-bold text-slate-500">Yazı<input type="color" defaultValue={t.text_color || "#ffffff"} onBlur={e=>updateTeamLook(t,{text_color:e.currentTarget.value})} className="mt-1 h-8 w-full"/></label>
+                <input defaultValue={t.logo_url || ""} onBlur={e=>updateTeamLook(t,{logo_url:e.currentTarget.value || null})} className="rounded-2xl border p-2 text-xs" placeholder="Logo URL"/>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {adminTab === "players" && <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100"><h2 className="text-xl font-black">Oyuncular</h2><div className="mt-4 flex gap-2"><input value={newPlayerName} onChange={e=>setNewPlayerName(e.target.value)} className="rounded-2xl border p-3" placeholder="Oyuncu adı"/><AppButton onClick={addPlayer}>Oyuncu ekle</AppButton></div><div className="mt-4 grid gap-2 md:grid-cols-2">{players.map((p:Player)=><div key={p.id} className="flex items-center justify-between rounded-2xl border p-3"><div><div className="font-black">{p.name}</div><div className="text-xs text-slate-500">Kod: {p.login_code || "-"}</div></div><AppButton kind="ghost" onClick={()=>togglePlayer(p)}>{p.is_active===false?"Aktifleştir":"Pasifleştir"}</AppButton></div>)}</div></section>}
 
