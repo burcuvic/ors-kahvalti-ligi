@@ -915,7 +915,7 @@ export default function Page() {
                     isFavoriteLeagueLocked={isFavoriteLeagueLocked}
                     isEuroLocked={isEuroLocked}
                     activeMatches={activeMatches}
-                    predictionFor={(matchId) => predictionFor(currentPlayer.id, matchId)}
+                    predictionFor={(matchId: string) => predictionFor(currentPlayer.id, matchId)}
                     playerFavorites={myFavorites}
                   />
                 )}
