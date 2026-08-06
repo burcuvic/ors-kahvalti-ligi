@@ -877,7 +877,7 @@ export default function Page() {
             <div className="flex items-center gap-4">
               <img src={MASCOT_SRC} alt="ORS" className="h-16 w-16 rounded-3xl bg-orange-100 object-contain p-2" />
               <div>
-                <div className="text-xs font-black uppercase tracking-[0.25em] text-orange-500">2026-2027 sezonu</div>
+                <div className="text-xs font-black uppercase tracking-[0.25em] text-orange-500">World Cup arşiv + 2026-2027 sezonu</div>
                 <h1 className="text-3xl font-black tracking-tight text-slate-900">ORS Kahvaltı Ligi</h1>
                 <p className="text-sm text-slate-500">Skor tahmini, haftalık joker, favoriler ve sezonluk Avrupa bonusları ⚽</p>
               </div>
@@ -1257,10 +1257,10 @@ function badgeCountsForPlayer(playerId: string, activeMatches: Match[], predicti
 
 function StatMiniCard({ icon, value, label }: any) {
   return (
-    <div className="rounded-[1.5rem] bg-white p-4 text-center shadow ring-1 ring-orange-100">
-      <div className="text-xl">{icon}</div>
+    <div className="rounded-3xl bg-white/90 p-4 text-center shadow-sm ring-1 ring-white/70 backdrop-blur">
+      <div className="text-lg">{icon}</div>
       <div className="mt-1 text-2xl font-black text-slate-900">{value}</div>
-      <div className="text-xs font-black uppercase tracking-wide text-slate-400">{label}</div>
+      <div className="text-[11px] font-black uppercase tracking-wide text-slate-400">{label}</div>
     </div>
   );
 }
@@ -1297,13 +1297,14 @@ function PredictTab(props: any) {
     <div>
       <Filters {...props} showPredictionStatus />
 
-      <section className="mb-4 rounded-[2rem] bg-gradient-to-br from-orange-50 to-white p-5 shadow ring-1 ring-orange-100">
+      <section className="mb-5 overflow-hidden rounded-[2.2rem] bg-gradient-to-br from-emerald-900 via-emerald-800 to-slate-950 p-5 text-white shadow-2xl ring-1 ring-emerald-700/40">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <h2 className="text-xl font-black text-slate-900">Hafta {props.selectedWeek} Tahmin Durumu</h2>
-            <p className="mt-1 text-sm text-slate-500">Maç başlamadan skorunu değiştir, jokerini başka maça taşı.</p>
+            <div className="text-[11px] font-black uppercase tracking-[0.25em] text-emerald-200">ORS Kahvaltı Ligi</div>
+            <h2 className="mt-1 text-2xl font-black tracking-tight">HAFTA {props.selectedWeek} TAHMİN MERKEZİ</h2>
+            <p className="mt-1 text-sm font-semibold text-emerald-100/80">Maç başlamadan skorunu değiştir, jokerini başka maça taşı.</p>
           </div>
-          <span className={cx("rounded-2xl px-3 py-1 text-xs font-black", weekJoker ? "bg-orange-500 text-white" : "bg-slate-100 text-slate-600")}>🃏 Joker {weekJoker ? "Kullanıldı" : "Kullanılmadı"}</span>
+          <span className={cx("rounded-2xl px-3 py-1 text-xs font-black shadow", weekJoker ? "bg-orange-500 text-white" : "bg-white/15 text-emerald-50 ring-1 ring-white/20")}>🃏 Joker {weekJoker ? "Kullanıldı" : "Kullanılmadı"}</span>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
           <StatMiniCard icon="⚽" value={weekMatches.length} label="Maç" />
@@ -1312,11 +1313,11 @@ function PredictTab(props: any) {
           <StatMiniCard icon="🃏" value={weekJoker ? "Var" : "Yok"} label="Joker" />
         </div>
         {missingCount > 0 ? (
-          <div className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800 ring-1 ring-amber-100">
+          <div className="mt-4 rounded-2xl bg-amber-300/15 px-4 py-3 text-sm font-bold text-amber-100 ring-1 ring-amber-200/20">
             ⚠️ Bu hafta {missingCount} maç için tahminin eksik.
           </div>
         ) : (
-          <div className="mt-4 rounded-2xl bg-green-50 px-4 py-3 text-sm font-bold text-green-700 ring-1 ring-green-100">
+          <div className="mt-4 rounded-2xl bg-emerald-300/15 px-4 py-3 text-sm font-bold text-emerald-100 ring-1 ring-emerald-200/20">
             ✅ Bu haftanın tüm tahminleri tamam. Kahvaltı kupası kokusu geldi.
           </div>
         )}
@@ -1345,7 +1346,10 @@ function PredictTab(props: any) {
       <div className="grid gap-5">
         {Object.entries(grouped).map(([day, matches]) => (
           <section key={day} className="grid gap-3">
-            <h3 className="px-1 text-sm font-black uppercase tracking-wide text-slate-500">📅 {day}</h3>
+            <h3 className="flex items-center justify-between rounded-2xl bg-white/80 px-4 py-3 text-sm font-black text-slate-700 shadow-sm ring-1 ring-emerald-100">
+              <span>📅 {day}</span>
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] text-emerald-700">{(matches as Match[]).length} maç</span>
+            </h3>
             <div className="grid gap-4 lg:grid-cols-2">
               {(matches as Match[]).map((match: Match) => (
                 <PredictionCard key={match.id} match={match} prediction={predictions.find((p: ScorePrediction) => p.player_id === currentPlayer.id && p.match_id === match.id)} savePrediction={savePrediction} leagueTeams={leagueTeams} activeMatches={activeMatches} />
@@ -1395,19 +1399,18 @@ function PredictionCard({ match, prediction, savePrediction, leagueTeams, active
   }
 
   return (
-    <div className="rounded-[2rem] bg-white p-4 shadow-xl ring-1 ring-orange-100">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="text-[11px] font-black uppercase text-orange-400">Hafta {match.week_no || 1} • {match.league || "Lig yok"} • {match.match_type || "Normal"}</div>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
-            <TeamPill team={homeTeamLook} name={match.home_team} />
-            <span className="font-black text-slate-400">-</span>
-            <TeamPill team={awayTeamLook} name={match.away_team} />
-          </div>
-          <div className="mt-1 text-xs font-semibold text-slate-500">{formatDate(match.match_time)}</div>
+    <div className="overflow-hidden rounded-[2rem] bg-white shadow-xl ring-1 ring-emerald-100">
+      <div
+        className="h-1.5"
+        style={{ background: `linear-gradient(90deg, ${homeTeamLook?.primary_color || "#10b981"}, ${awayTeamLook?.primary_color || "#fb923c"})` }}
+      />
+      <div className="p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-[11px] font-black uppercase tracking-wide text-slate-400">
+          {match.league || "Lig yok"} · Hafta {match.week_no || 1} · {formatDate(match.match_time)} · {match.match_type || "Normal"}
         </div>
         <span className={cx(
-          "shrink-0 rounded-2xl px-2.5 py-1 text-[11px] font-black",
+          "rounded-2xl px-2.5 py-1 text-[11px] font-black",
           status === "Kilitlendi" && "bg-slate-200 text-slate-600",
           status === "Tahmin yapıldı" && "bg-green-100 text-green-700",
           status === "Tahmin bekliyor" && "bg-amber-100 text-amber-700",
@@ -1416,16 +1419,22 @@ function PredictionCard({ match, prediction, savePrediction, leagueTeams, active
         </span>
       </div>
 
+      <div className="mt-4 flex flex-col items-center justify-center gap-2 md:flex-row md:gap-4">
+        <TeamPill team={homeTeamLook} name={match.home_team} />
+        <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-black text-slate-400">VS</span>
+        <TeamPill team={awayTeamLook} name={match.away_team} />
+      </div>
+
       <div className="mt-4 grid items-center gap-3 md:grid-cols-[1fr_auto_1fr]">
         <div className="flex items-center justify-between gap-2 rounded-2xl bg-slate-50 p-2 md:justify-end">
           <span className="truncate text-xs font-black text-slate-600 md:max-w-[130px]">{match.home_team}</span>
-          <select disabled={locked} value={home} onChange={(e) => setHome(Number(e.target.value))} className="h-11 w-16 rounded-2xl border border-slate-200 bg-white text-center text-lg font-black disabled:bg-slate-100">
+          <select disabled={locked} value={home} onChange={(e) => setHome(Number(e.target.value))} className="h-12 w-16 rounded-2xl border border-slate-200 bg-white text-center text-xl font-black shadow-sm disabled:bg-slate-100">
             {GOAL_OPTIONS.map((g) => <option key={g} value={g}>{g}</option>)}
           </select>
         </div>
         <span className="hidden text-lg font-black text-slate-400 md:block">-</span>
         <div className="flex items-center justify-between gap-2 rounded-2xl bg-slate-50 p-2">
-          <select disabled={locked} value={away} onChange={(e) => setAway(Number(e.target.value))} className="h-11 w-16 rounded-2xl border border-slate-200 bg-white text-center text-lg font-black disabled:bg-slate-100">
+          <select disabled={locked} value={away} onChange={(e) => setAway(Number(e.target.value))} className="h-12 w-16 rounded-2xl border border-slate-200 bg-white text-center text-xl font-black shadow-sm disabled:bg-slate-100">
             {GOAL_OPTIONS.map((g) => <option key={g} value={g}>{g}</option>)}
           </select>
           <span className="truncate text-xs font-black text-slate-600 md:max-w-[130px]">{match.away_team}</span>
@@ -1448,10 +1457,10 @@ function PredictionCard({ match, prediction, savePrediction, leagueTeams, active
         </div>
       ) : null}
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <AppButton kind="ghost" disabled={locked} onClick={() => setQuickOpen(!quickOpen)}>⚡ Hızlı skorlar</AppButton>
-        <AppButton kind="ghost" disabled={locked} onClick={() => { const r = smartRandomScore(homeForm, awayForm); setHome(r.home); setAway(r.away); savePrediction(match, r.home, r.away, advancing || null, joker); }}>🎲 Rastgele</AppButton>
+      <div className="mt-4 grid grid-cols-2 gap-2">
         <AppButton kind={joker ? "primary" : "soft"} disabled={locked} onClick={() => { const next = !joker; setJoker(next); saveCurrent(next); }}>{joker ? "🃏 Joker seçildi" : "🃏 Joker yap"}</AppButton>
+        <AppButton kind="ghost" disabled={locked} onClick={() => { const r = smartRandomScore(homeForm, awayForm); setHome(r.home); setAway(r.away); savePrediction(match, r.home, r.away, advancing || null, joker); }}>🎲 Rastgele</AppButton>
+        <AppButton kind="ghost" disabled={locked} onClick={() => setQuickOpen(!quickOpen)}>⚡ Hızlı skorlar</AppButton>
         <AppButton disabled={locked} onClick={() => saveCurrent()}>Tahmini kaydet</AppButton>
       </div>
 
@@ -1472,6 +1481,7 @@ function PredictionCard({ match, prediction, savePrediction, leagueTeams, active
             {match.is_knockout && match.tie_leg !== "first" ? <span>Eleme/kupa tur tahmini +2</span> : null}
           </div>
         ) : null}
+      </div>
       </div>
     </div>
   );
