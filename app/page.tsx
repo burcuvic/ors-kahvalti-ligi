@@ -90,6 +90,9 @@ type LeagueTeam = {
   text_color?: string | null;
   logo_url?: string | null;
   manual_form?: string | null;
+  nickname?: string | null;
+  profile_title?: string | null;
+  fan_phrase?: string | null;
 };
 
 type PlayerFavorite = {
@@ -679,6 +682,37 @@ export default function Page() {
     return { total, details };
   }
 
+  function supportedTeamBonusFor(player: Player) {
+    const heartTeam = normalize(player.heart_team);
+    if (!heartTeam) return { total: 0, winPoints: 0, championPoints: 0, details: [] as string[] };
+
+    let winPoints = 0;
+    const details: string[] = [];
+
+    activeMatches.filter(isPlayed).forEach((match) => {
+      const homeWins = Number(match.home_score ?? 0) > Number(match.away_score ?? 0);
+      const awayWins = Number(match.away_score ?? 0) > Number(match.home_score ?? 0);
+      const supportedWon =
+        (normalize(match.home_team) === heartTeam && homeWins) ||
+        (normalize(match.away_team) === heartTeam && awayWins);
+      if (supportedWon) winPoints += 1;
+    });
+
+    let championPoints = 0;
+    leagueWinners
+      .filter((w) => w.season_id === selectedSeason?.id && w.bonus_applied)
+      .forEach((winner) => {
+        if (normalize(winner.winner_team) === heartTeam) {
+          championPoints += 25;
+          details.push(`${winner.league} tuttuğu takım şampiyonluğu +25`);
+        }
+      });
+
+    const total = winPoints + championPoints;
+    if (winPoints) details.unshift(`Tuttuğu takım galibiyetleri +${winPoints}`);
+    return { total, winPoints, championPoints, details };
+  }
+
   const scoreRows = useMemo(() => {
     return activePlayers.map((player) => {
       let total = 0;
@@ -704,7 +738,10 @@ export default function Page() {
 
       const seasonBonus = seasonBonusFor(player.id);
       total += seasonBonus.total;
-      const matchPoints = total;
+      favoritePoints += seasonBonus.total;
+      const supportedTeamBonus = supportedTeamBonusFor(player);
+      total += supportedTeamBonus.total;
+      const matchPoints = total - favoritePoints - supportedTeamBonus.total;
       const adminPointTotal = adminPoints
         .filter((p) => p.season_id === selectedSeason?.id && p.player_id === player.id)
         .reduce((sum, p) => sum + Number(p.points || 0), 0);
@@ -715,6 +752,10 @@ export default function Page() {
         total,
         matchPoints,
         adminPointTotal,
+        supportedTeamPoints: supportedTeamBonus.total,
+        supportedTeamWinPoints: supportedTeamBonus.winPoints,
+        supportedTeamChampionPoints: supportedTeamBonus.championPoints,
+        supportedTeamDetails: supportedTeamBonus.details.join(", "),
         exact,
         resultCorrect,
         missing,
@@ -774,16 +815,51 @@ export default function Page() {
         .eq("match_id", existingWeekJoker.match_id);
     }
 
-    const { error } = await supabase
+    const { data, error } = await supabase
       .from("score_predictions")
-      .upsert(payload, { onConflict: "season_id,player_id,match_id" });
+      .upsert(payload, { onConflict: "season_id,player_id,match_id" })
+      .select("*")
+      .maybeSingle();
 
     if (error) {
       setMessage(error.message);
-      return;
+      return false;
     }
-    setMessage("Tahmin kaydedildi ✅");
-    await loadAll();
+
+    // Tahmin kaydından sonra tüm ekranı yeniden yükleme.
+    // Sadece ilgili tahminleri local state içinde güncelle; kullanıcı aynı ekranda devam etsin.
+    const savedPrediction = (data || payload) as ScorePrediction;
+    setScorePredictions((prev) => {
+      let next = prev.map((p) => {
+        if (
+          joker &&
+          existingWeekJoker &&
+          existingWeekJoker.match_id !== match.id &&
+          p.season_id === selectedSeason.id &&
+          p.player_id === currentPlayer.id &&
+          p.match_id === existingWeekJoker.match_id
+        ) {
+          return { ...p, is_joker: false };
+        }
+        return p;
+      });
+
+      const index = next.findIndex(
+        (p) =>
+          p.season_id === selectedSeason.id &&
+          p.player_id === currentPlayer.id &&
+          p.match_id === match.id,
+      );
+
+      if (index >= 0) {
+        next[index] = { ...next[index], ...savedPrediction };
+      } else {
+        next = [...next, savedPrediction];
+      }
+      return next;
+    });
+
+    return true;
   }
 
   async function saveFavorite(league: string, teamName: string) {
@@ -1090,6 +1166,8 @@ function Dashboard({ scoreRows, currentPlayer, myRank, myRow, selectedSeason, ac
                 <th className="p-3">#</th>
                 <th className="p-3">Oyuncu</th>
                 <th className="p-3">Maç Puanı</th>
+                <th className="p-3">Favori Puanı</th>
+                <th className="p-3">Tuttuğu Takım</th>
                 <th className="p-3">Admin Puanı</th>
                 <th className="p-3">Toplam</th>
                 <th className="p-3">Tam Skor</th>
@@ -1104,6 +1182,8 @@ function Dashboard({ scoreRows, currentPlayer, myRank, myRow, selectedSeason, ac
                   <td className="p-3 font-black">{index + 1}</td>
                   <td className="p-3 font-bold"><button onClick={() => onViewProfile(row.player.id)} className="font-black text-slate-800 underline decoration-orange-300 underline-offset-4 hover:text-orange-600">{index === 0 ? "👑 " : ""}{row.player.name}</button></td>
                   <td className="p-3 font-black text-slate-700">{row.matchPoints}</td>
+                  <td className="p-3 font-black text-pink-600" title={row.seasonBonusDetails}>{row.favoritePoints}</td>
+                  <td className="p-3 font-black text-emerald-600" title={row.supportedTeamDetails}>{row.supportedTeamPoints}</td>
                   <td className={cx("p-3 font-black", row.adminPointTotal > 0 ? "text-green-600" : row.adminPointTotal < 0 ? "text-rose-600" : "text-slate-400")}>{row.adminPointTotal}</td>
                   <td className="p-3 text-lg font-black text-orange-600">{row.total}</td>
                   <td className="p-3">{row.exact}</td>
@@ -1371,6 +1451,7 @@ function PredictionCard({ match, prediction, savePrediction, leagueTeams, active
   const [joker, setJoker] = useState<boolean>(Boolean(prediction?.is_joker));
   const [quickOpen, setQuickOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">(prediction ? "saved" : "idle");
   const locked = isStarted(match);
   const homeTeamLook = findTeam(leagueTeams || [], match.home_team, match.league);
   const awayTeamLook = findTeam(leagueTeams || [], match.away_team, match.league);
@@ -1387,15 +1468,21 @@ function PredictionCard({ match, prediction, savePrediction, leagueTeams, active
     setJoker(Boolean(prediction?.is_joker));
   }, [prediction?.id, prediction?.home_goals, prediction?.away_goals, prediction?.is_joker, prediction?.advancing_team]);
 
+  async function saveWithCardState(h: number, a: number, adv: string | null, useJoker: boolean) {
+    setSaveState("saving");
+    const ok = await savePrediction(match, h, a, adv, useJoker);
+    setSaveState(ok ? "saved" : "error");
+  }
+
   function quick(value: string) {
     const [h, a] = value.split("-").map(Number);
     setHome(h);
     setAway(a);
-    savePrediction(match, h, a, advancing || null, joker);
+    void saveWithCardState(h, a, advancing || null, joker);
   }
 
   function saveCurrent(nextJoker = joker) {
-    savePrediction(match, home, away, advancing || null, nextJoker);
+    void saveWithCardState(home, away, advancing || null, nextJoker);
   }
 
   return (
@@ -1459,9 +1546,19 @@ function PredictionCard({ match, prediction, savePrediction, leagueTeams, active
 
       <div className="mt-4 grid grid-cols-2 gap-2">
         <AppButton kind={joker ? "primary" : "soft"} disabled={locked} onClick={() => { const next = !joker; setJoker(next); saveCurrent(next); }}>{joker ? "🃏 Joker seçildi" : "🃏 Joker yap"}</AppButton>
-        <AppButton kind="ghost" disabled={locked} onClick={() => { const r = smartRandomScore(homeForm, awayForm); setHome(r.home); setAway(r.away); savePrediction(match, r.home, r.away, advancing || null, joker); }}>🎲 Rastgele</AppButton>
+        <AppButton kind="ghost" disabled={locked} onClick={() => { const r = smartRandomScore(homeForm, awayForm); setHome(r.home); setAway(r.away); void saveWithCardState(r.home, r.away, advancing || null, joker); }}>🎲 Rastgele</AppButton>
         <AppButton kind="ghost" disabled={locked} onClick={() => setQuickOpen(!quickOpen)}>⚡ Hızlı skorlar</AppButton>
-        <AppButton disabled={locked} onClick={() => saveCurrent()}>Tahmini kaydet</AppButton>
+        <AppButton disabled={locked || saveState === "saving"} onClick={() => saveCurrent()}>{saveState === "saving" ? "Kaydediliyor..." : "Tahmini kaydet"}</AppButton>
+      </div>
+
+      <div className={cx(
+        "mt-3 rounded-2xl px-3 py-2 text-xs font-black",
+        saveState === "saving" && "bg-amber-50 text-amber-700",
+        saveState === "saved" && "bg-green-50 text-green-700",
+        saveState === "error" && "bg-rose-50 text-rose-700",
+        saveState === "idle" && "hidden",
+      )}>
+        {saveState === "saving" ? "Kaydediliyor..." : saveState === "saved" ? "Kaydedildi ✅" : "Kaydedilemedi, tekrar dene."}
       </div>
 
       {quickOpen ? (
@@ -1570,16 +1667,25 @@ function ProfileTab({ currentPlayer, profilePlayer, isOwnProfile, selectedSeason
     .sort((a, b) => a.localeCompare(b, "tr-TR"));
   const weeks: number[] = Array.from(new Set(activeMatches.map((m: Match) => Number(m.week_no || 1)).filter(Boolean))) as number[];
   weeks.sort((a: number, b: number) => a - b);
+  const heartTeamInfo = profilePlayer.heart_team ? leagueTeams.find((t: LeagueTeam) => normalize(t.team_name) === normalize(profilePlayer.heart_team)) : null;
+  const heartPrimary = heartTeamInfo?.primary_color || "#10b981";
+  const heartSecondary = heartTeamInfo?.secondary_color || "#f97316";
+  const heartNickname = heartTeamInfo?.nickname || "";
+  const heartPhrase = heartTeamInfo?.fan_phrase || "";
 
   return (
     <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
       <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100">
-        <div className="rounded-[1.5rem] bg-gradient-to-br from-emerald-50 to-orange-50 p-5 ring-1 ring-emerald-100">
+        <div className="overflow-hidden rounded-[1.5rem] bg-white ring-1 ring-emerald-100">
+          <div className="h-4" style={{ background: `linear-gradient(90deg, ${heartPrimary}, ${heartSecondary})` }} />
+          <div className="p-5">
           <div className="text-xs font-black uppercase tracking-wider text-emerald-600">ORS Kahvaltı Ligi Oyuncu Kartı</div>
           <h2 className="mt-2 text-3xl font-black text-slate-900">{profilePlayer.name}</h2>
           <p className="mt-1 text-sm font-semibold text-slate-500">{selectedSeason?.name}</p>
-          <div className="mt-4 rounded-2xl bg-white/70 p-3 text-sm font-bold text-slate-700">
-            ❤️ Tuttuğu takım: {profilePlayer.heart_team ? <span className="font-black text-orange-600">{profilePlayer.heart_team}</span> : <span className="text-slate-400">Henüz seçilmedi</span>}
+          <div className="mt-4 rounded-2xl bg-slate-50 p-3 text-sm font-bold text-slate-700">
+            ❤️ Tuttuğu takım: {profilePlayer.heart_team ? <span className="font-black" style={{ color: heartPrimary }}>{profilePlayer.heart_team}</span> : <span className="text-slate-400">Henüz seçilmedi</span>}
+            {heartNickname ? <div className="mt-1 text-xs font-black uppercase tracking-wide text-slate-500">{heartNickname}</div> : null}
+            {heartPhrase ? <div className="mt-1 text-xs font-semibold italic text-slate-400">“{heartPhrase}”</div> : null}
           </div>
           {isOwnProfile ? (
             <select value={profilePlayer.heart_team || ""} onChange={(e) => saveHeartTeam(e.target.value)} className="mt-3 w-full rounded-2xl border border-emerald-100 bg-white px-3 py-2 text-sm font-bold">
@@ -1587,6 +1693,7 @@ function ProfileTab({ currentPlayer, profilePlayer, isOwnProfile, selectedSeason
               {allTeamNames.map((name) => <option key={name} value={name}>{name}</option>)}
             </select>
           ) : null}
+          </div>
         </div>
 
         <h3 className="mt-6 font-black">🏅 Rozet vitrini</h3>
@@ -1830,7 +1937,7 @@ function AdminTab({ selectedSeason, seasons, activeWeek, leagueTeams, players, m
   }
 
   async function addTeam() {
-    const { error } = await supabase.from("league_teams").insert({ league: teamLeague, team_name: teamName, primary_color: teamPrimaryColor, secondary_color: teamSecondaryColor, text_color: teamTextColor, logo_url: teamLogoUrl || null, manual_form: "" });
+    const { error } = await supabase.from("league_teams").insert({ league: teamLeague, team_name: teamName, primary_color: teamPrimaryColor, secondary_color: teamSecondaryColor, text_color: teamTextColor, logo_url: teamLogoUrl || null, manual_form: "", nickname: "" });
     if (error) setMessage(error.message); else { setTeamName(""); setTeamLogoUrl(""); setMessage("Takım eklendi ✅"); reload(); }
   }
 
@@ -2007,8 +2114,9 @@ function AdminTab({ selectedSeason, seasons, activeWeek, leagueTeams, players, m
           </div>
           <div className="mt-5 grid gap-3">
             {leagueTeams.filter((t:LeagueTeam)=>t.league===teamLeague).map((t:LeagueTeam)=>(
-              <div key={t.id} className="grid gap-3 rounded-2xl border border-slate-100 p-3 md:grid-cols-[1fr_120px_120px_120px_150px_auto] md:items-center">
+              <div key={t.id} className="grid gap-3 rounded-2xl border border-slate-100 p-3 md:grid-cols-[1fr_140px_120px_120px_120px_150px_auto] md:items-center">
                 <TeamPill team={t} name={t.team_name} />
+                <input defaultValue={t.nickname || ""} onBlur={e=>updateTeamLook(t,{nickname:e.currentTarget.value || null})} className="rounded-2xl border p-2 text-xs" placeholder="Lakap: Cimbom Bom"/>
                 <label className="text-xs font-bold text-slate-500">Ana<input type="color" defaultValue={t.primary_color || "#64748b"} onBlur={e=>updateTeamLook(t,{primary_color:e.currentTarget.value})} className="mt-1 h-8 w-full"/></label>
                 <label className="text-xs font-bold text-slate-500">İkinci<input type="color" defaultValue={t.secondary_color || "#f8fafc"} onBlur={e=>updateTeamLook(t,{secondary_color:e.currentTarget.value})} className="mt-1 h-8 w-full"/></label>
                 <label className="text-xs font-bold text-slate-500">Yazı<input type="color" defaultValue={t.text_color || "#ffffff"} onBlur={e=>updateTeamLook(t,{text_color:e.currentTarget.value})} className="mt-1 h-8 w-full"/></label>
