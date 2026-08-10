@@ -9,6 +9,8 @@ const supabase = createClient(
 );
 
 const ADMIN_PASSWORD = "ors2026";
+const PLAYER_STORAGE_KEY = "ors_kahvalti_current_player";
+const ADMIN_STORAGE_KEY = "ors_kahvalti_admin_mode";
 const MASCOT_SRC = "/ors-mascot.png";
 
 type Player = {
@@ -575,7 +577,42 @@ export default function Page() {
 
   useEffect(() => {
     loadAll();
+
+    // Bir kere giriş yaptıktan sonra tarayıcıda kalsın.
+    // Aynı cihaz/tarayıcıda tekrar isim + şifre sormayacağız.
+    try {
+      const savedPlayer = localStorage.getItem(PLAYER_STORAGE_KEY);
+      const savedAdmin = localStorage.getItem(ADMIN_STORAGE_KEY);
+
+      if (savedPlayer) {
+        const parsed = JSON.parse(savedPlayer) as Player;
+        setCurrentPlayer(parsed);
+        setLoginName(parsed.name || "");
+        setLoginCode(parsed.login_code || "");
+      }
+
+      if (savedAdmin === "true") {
+        setIsAdminMode(true);
+      }
+    } catch {
+      localStorage.removeItem(PLAYER_STORAGE_KEY);
+      localStorage.removeItem(ADMIN_STORAGE_KEY);
+    }
   }, []);
+
+  useEffect(() => {
+    if (!currentPlayer || !players.length) return;
+    const freshPlayer = players.find((p) => p.id === currentPlayer.id);
+    if (!freshPlayer) return;
+
+    // Supabase'de isim/aktiflik/tuttuğu takım değiştiyse local kaydı da güncel tutalım.
+    if (JSON.stringify(freshPlayer) !== JSON.stringify(currentPlayer)) {
+      setCurrentPlayer(freshPlayer);
+      try {
+        localStorage.setItem(PLAYER_STORAGE_KEY, JSON.stringify(freshPlayer));
+      } catch {}
+    }
+  }, [players, currentPlayer?.id]);
 
   useEffect(() => {
     if (activeSetting?.active_week) setSelectedWeek(activeSetting.active_week);
@@ -638,6 +675,11 @@ export default function Page() {
     setIsAdminMode(false);
     setTab("dashboard");
     setMessage(`Hoş geldin ${player.name} ⚽`);
+
+    try {
+      localStorage.setItem(PLAYER_STORAGE_KEY, JSON.stringify(player));
+      localStorage.removeItem(ADMIN_STORAGE_KEY);
+    } catch {}
   }
 
   function adminLogin() {
@@ -648,6 +690,10 @@ export default function Page() {
     setIsAdminMode(true);
     setTab("admin");
     setMessage("Admin modu açıldı.");
+
+    try {
+      localStorage.setItem(ADMIN_STORAGE_KEY, "true");
+    } catch {}
   }
 
   function logout() {
@@ -656,6 +702,11 @@ export default function Page() {
     setLoginCode("");
     setAdminPassword("");
     setTab("dashboard");
+
+    try {
+      localStorage.removeItem(PLAYER_STORAGE_KEY);
+      localStorage.removeItem(ADMIN_STORAGE_KEY);
+    } catch {}
   }
 
   function predictionFor(playerId: string, matchId: string) {
