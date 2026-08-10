@@ -270,6 +270,26 @@ function competitionBonus(competition: string) {
   return EURO_COMPETITIONS.find((c) => c.name === competition)?.points || 20;
 }
 
+function favoriteWinBonus(match: Match, favorites: PlayerFavorite[]) {
+  if (!isPlayed(match)) return 0;
+  if (normalize(match.league).includes("milli")) return 0;
+
+  const realHome = Number(match.home_score ?? 0);
+  const realAway = Number(match.away_score ?? 0);
+  const homeWins = realHome > realAway;
+  const awayWins = realAway > realHome;
+
+  return favorites.some((fav) => {
+    const team = normalize(fav.team_name);
+    return (
+      (team === normalize(match.home_team) && homeWins) ||
+      (team === normalize(match.away_team) && awayWins)
+    );
+  })
+    ? 1
+    : 0;
+}
+
 function scorePrediction(
   prediction: ScorePrediction | undefined,
   match: Match,
@@ -287,12 +307,14 @@ function scorePrediction(
     };
   }
 
+  const favoriteBonus = favoriteWinBonus(match, favorites);
+
   if (!prediction) {
     return {
-      total: -3,
-      detail: "Tahmin yok: -3",
+      total: -3 + favoriteBonus,
+      detail: favoriteBonus ? "Tahmin yok: -3 | Favori galibiyet +1" : "Tahmin yok: -3",
       base: -3,
-      favoriteBonus: 0,
+      favoriteBonus,
       tourBonus: 0,
       exact: false,
       resultCorrect: false,
@@ -335,15 +357,7 @@ function scorePrediction(
     parts.push("2.5 +1");
   }
 
-  const hasFavoriteTeam = favorites.some(
-    (fav) =>
-      normalize(fav.team_name) === normalize(match.home_team) ||
-      normalize(fav.team_name) === normalize(match.away_team),
-  );
-
-  const isNational = normalize(match.league).includes("milli");
-  const favoriteBonus = hasFavoriteTeam && resultCorrect && !isNational ? 1 : 0;
-  if (favoriteBonus) parts.push("Favori +1");
+  if (favoriteBonus) parts.push("Favori galibiyet +1");
 
   const tourBonus =
     prediction.advancing_team &&
@@ -1745,7 +1759,7 @@ function ProfileTab({ currentPlayer, profilePlayer, isOwnProfile, selectedSeason
         </div>
 
         <h3 className="mt-6 font-black">Lig favorileri</h3>
-        <p className="mt-1 text-sm text-slate-500">Favori takım maçında doğru sonuç +1. Lig şampiyonu olursa +20.</p>
+        <p className="mt-1 text-sm text-slate-500">Favori takım kazanırsa +1. Lig şampiyonu olursa +20.</p>
         <div className="mt-4 grid gap-3">
           {REQUIRED_FAVORITE_LEAGUES.map((league) => {
             const fav = playerFavorites.find((f: PlayerFavorite) => f.league === league);
