@@ -10,6 +10,7 @@ const supabase = createClient(
 
 const ADMIN_PASSWORD = "ors2026";
 const PLAYER_STORAGE_KEY = "ors_kahvalti_current_player";
+const PLAYER_ID_STORAGE_KEY = "ors_kahvalti_current_player_id";
 const ADMIN_STORAGE_KEY = "ors_kahvalti_admin_mode";
 const MASCOT_SRC = "/ors-mascot.png";
 
@@ -577,39 +578,79 @@ export default function Page() {
 
   useEffect(() => {
     loadAll();
+    restoreLogin();
+  }, []);
 
-    // Bir kere giriş yaptıktan sonra tarayıcıda kalsın.
-    // Aynı cihaz/tarayıcıda tekrar isim + şifre sormayacağız.
+  async function restoreLogin() {
     try {
-      const savedPlayer = localStorage.getItem(PLAYER_STORAGE_KEY);
+      const savedPlayerId = localStorage.getItem(PLAYER_ID_STORAGE_KEY);
+      const savedPlayerJson = localStorage.getItem(PLAYER_STORAGE_KEY);
       const savedAdmin = localStorage.getItem(ADMIN_STORAGE_KEY);
 
-      if (savedPlayer) {
-        const parsed = JSON.parse(savedPlayer) as Player;
-        setCurrentPlayer(parsed);
-        setLoginName(parsed.name || "");
-        setLoginCode(parsed.login_code || "");
+      let restored: Player | null = null;
+
+      if (savedPlayerId) {
+        const { data, error } = await supabase
+          .from("players")
+          .select("*")
+          .eq("id", savedPlayerId)
+          .maybeSingle();
+
+        if (!error && data && data.is_active !== false) {
+          restored = data as Player;
+        }
       }
 
-      if (savedAdmin === "true") {
+      if (!restored && savedPlayerJson) {
+        const parsed = JSON.parse(savedPlayerJson) as Player;
+
+        if (parsed?.id) {
+          const { data, error } = await supabase
+            .from("players")
+            .select("*")
+            .eq("id", parsed.id)
+            .maybeSingle();
+
+          if (!error && data && data.is_active !== false) {
+            restored = data as Player;
+          } else if (parsed.is_active !== false) {
+            restored = parsed;
+          }
+        }
+      }
+
+      if (restored) {
+        setCurrentPlayer(restored);
+        setLoginName(restored.name || "");
+        setLoginCode(restored.login_code || "");
+        localStorage.setItem(PLAYER_STORAGE_KEY, JSON.stringify(restored));
+        localStorage.setItem(PLAYER_ID_STORAGE_KEY, restored.id);
+      } else {
+        localStorage.removeItem(PLAYER_STORAGE_KEY);
+        localStorage.removeItem(PLAYER_ID_STORAGE_KEY);
+        localStorage.removeItem(ADMIN_STORAGE_KEY);
+      }
+
+      if (savedAdmin === "true" && restored && normalize(restored.name).includes("burcu")) {
         setIsAdminMode(true);
       }
     } catch {
       localStorage.removeItem(PLAYER_STORAGE_KEY);
+      localStorage.removeItem(PLAYER_ID_STORAGE_KEY);
       localStorage.removeItem(ADMIN_STORAGE_KEY);
     }
-  }, []);
+  }
 
   useEffect(() => {
     if (!currentPlayer || !players.length) return;
     const freshPlayer = players.find((p) => p.id === currentPlayer.id);
     if (!freshPlayer) return;
 
-    // Supabase'de isim/aktiflik/tuttuğu takım değiştiyse local kaydı da güncel tutalım.
     if (JSON.stringify(freshPlayer) !== JSON.stringify(currentPlayer)) {
       setCurrentPlayer(freshPlayer);
       try {
         localStorage.setItem(PLAYER_STORAGE_KEY, JSON.stringify(freshPlayer));
+        localStorage.setItem(PLAYER_ID_STORAGE_KEY, freshPlayer.id);
       } catch {}
     }
   }, [players, currentPlayer?.id]);
@@ -678,6 +719,7 @@ export default function Page() {
 
     try {
       localStorage.setItem(PLAYER_STORAGE_KEY, JSON.stringify(player));
+      localStorage.setItem(PLAYER_ID_STORAGE_KEY, player.id);
       localStorage.removeItem(ADMIN_STORAGE_KEY);
     } catch {}
   }
@@ -705,6 +747,7 @@ export default function Page() {
 
     try {
       localStorage.removeItem(PLAYER_STORAGE_KEY);
+      localStorage.removeItem(PLAYER_ID_STORAGE_KEY);
       localStorage.removeItem(ADMIN_STORAGE_KEY);
     } catch {}
   }
