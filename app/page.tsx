@@ -1974,7 +1974,7 @@ function StatsTab({ scoreRows, activeMatches, predictions, favorites, players }:
     items.filter(Boolean).forEach((item) => map.set(item, (map.get(item) || 0) + 1));
     return Array.from(map.entries())
       .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "tr"));
+      .sort((a: any, b: any) => b.count - a.count || a.name.localeCompare(b.name, "tr"));
   };
 
   const heartCounts = countBy(players.map((p: Player) => p.heart_team || ""));
@@ -2016,11 +2016,11 @@ function StatsTab({ scoreRows, activeMatches, predictions, favorites, players }:
     });
   });
 
-  const teamPointRows = Array.from(teamPointMap.values()).sort((a, b) => b.points - a.points || b.exact - a.exact);
+  const teamPointRows = Array.from(teamPointMap.values()).sort((a: any, b: any) => b.points - a.points || b.exact - a.exact);
   const bestTeamPerPlayer = players.map((player: Player) => {
     const rows = teamPointRows.filter((row) => row.player.id === player.id);
     return rows[0] || { player, team: "-", points: 0, matches: 0, exact: 0, correct: 0 };
-  }).sort((a, b) => b.points - a.points);
+  }).sort((a: any, b: any) => b.points - a.points);
 
   const teamTotalRows = Array.from(
     teamPointRows.reduce((map, row) => {
@@ -2031,7 +2031,7 @@ function StatsTab({ scoreRows, activeMatches, predictions, favorites, players }:
       map.set(row.team, current);
       return map;
     }, new Map<string, { team: string; points: number; matches: number; players: Set<string> }>() ).values()
-  ).map((row) => ({ ...row, playerCount: row.players.size })).sort((a, b) => b.points - a.points);
+  ).map((row) => ({ ...row, playerCount: row.players.size })).sort((a: any, b: any) => b.points - a.points);
 
   return (
     <div className="grid gap-5">
