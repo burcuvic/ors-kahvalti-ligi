@@ -1958,7 +1958,9 @@ function TeamsTab({ leagueTeams }: any) {
 }
 
 function StatsTab({ scoreRows, activeMatches, predictions, favorites, players }: any) {
-  const hardest = activeMatches.filter(isPlayed).map((match: Match) => {
+  const playedMatches = activeMatches.filter(isPlayed);
+
+  const hardest = playedMatches.map((match: Match) => {
     const correct = players.filter((p: Player) => {
       const pred = predictions.find((x: ScorePrediction) => x.player_id === p.id && x.match_id === match.id);
       if (!pred) return false;
@@ -1996,6 +1998,40 @@ function StatsTab({ scoreRows, activeMatches, predictions, favorites, players }:
 
   const favoriteOf = (playerId: string, league: string) =>
     favorites.find((f: PlayerFavorite) => f.player_id === playerId && f.league === league)?.team_name || "-";
+
+  const teamPointMap = new Map<string, { player: Player; team: string; points: number; matches: number; exact: number; correct: number }>();
+  playedMatches.forEach((match: Match) => {
+    players.forEach((player: Player) => {
+      const pred = predictions.find((x: ScorePrediction) => x.player_id === player.id && x.match_id === match.id);
+      const s = scorePrediction(pred, match, favorites.filter((f: PlayerFavorite) => f.player_id === player.id));
+      [match.home_team, match.away_team].forEach((team) => {
+        const key = `${player.id}__${team}`;
+        const current = teamPointMap.get(key) || { player, team, points: 0, matches: 0, exact: 0, correct: 0 };
+        current.points += Number(s.total || 0);
+        current.matches += 1;
+        current.exact += s.exact ? 1 : 0;
+        current.correct += s.resultCorrect ? 1 : 0;
+        teamPointMap.set(key, current);
+      });
+    });
+  });
+
+  const teamPointRows = Array.from(teamPointMap.values()).sort((a, b) => b.points - a.points || b.exact - a.exact);
+  const bestTeamPerPlayer = players.map((player: Player) => {
+    const rows = teamPointRows.filter((row) => row.player.id === player.id);
+    return rows[0] || { player, team: "-", points: 0, matches: 0, exact: 0, correct: 0 };
+  }).sort((a, b) => b.points - a.points);
+
+  const teamTotalRows = Array.from(
+    teamPointRows.reduce((map, row) => {
+      const current = map.get(row.team) || { team: row.team, points: 0, matches: 0, players: new Set<string>() };
+      current.points += row.points;
+      current.matches += row.matches;
+      current.players.add(row.player.id);
+      map.set(row.team, current);
+      return map;
+    }, new Map<string, { team: string; points: number; matches: number; players: Set<string> }>() ).values()
+  ).map((row) => ({ ...row, playerCount: row.players.size })).sort((a, b) => b.points - a.points);
 
   return (
     <div className="grid gap-5">
@@ -2113,6 +2149,101 @@ function StatsTab({ scoreRows, activeMatches, predictions, favorites, players }:
                   ))}
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-black">🎯 Kim Hangi Takımdan Puan Kazandı?</h2>
+            <p className="mt-1 text-sm text-slate-500">Sonuçlanmış maçlarda oyuncuların takım bazlı puan katkısı. Bir maç iki takıma da yazılır: örn. Galatasaray - Çorum maçından alınan puan hem Galatasaray hem Çorum satırında sayılır.</p>
+          </div>
+          <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-700">
+            ✅ {playedMatches.length} sonuçlanmış maç
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          <div className="rounded-3xl bg-gradient-to-br from-orange-50 to-amber-50 p-4 ring-1 ring-orange-100">
+            <div className="text-xs font-black uppercase tracking-[0.18em] text-orange-500">En bereketli takım</div>
+            <div className="mt-2 text-2xl font-black">{teamTotalRows[0]?.team || "-"}</div>
+            <div className="text-sm text-slate-500">{teamTotalRows[0] ? `${teamTotalRows[0].points} toplam puan` : "Sonuç bekleniyor"}</div>
+          </div>
+          <div className="rounded-3xl bg-gradient-to-br from-blue-50 to-cyan-50 p-4 ring-1 ring-blue-100">
+            <div className="text-xs font-black uppercase tracking-[0.18em] text-blue-500">Oyuncu-takım zirvesi</div>
+            <div className="mt-2 text-2xl font-black">{teamPointRows[0] ? `${teamPointRows[0].player.name} × ${teamPointRows[0].team}` : "-"}</div>
+            <div className="text-sm text-slate-500">{teamPointRows[0] ? `${teamPointRows[0].points} puan` : "Sonuç bekleniyor"}</div>
+          </div>
+          <div className="rounded-3xl bg-gradient-to-br from-purple-50 to-fuchsia-50 p-4 ring-1 ring-purple-100">
+            <div className="text-xs font-black uppercase tracking-[0.18em] text-purple-500">En iyi kişisel takım</div>
+            <div className="mt-2 text-2xl font-black">{bestTeamPerPlayer[0] ? `${bestTeamPerPlayer[0].player.name}` : "-"}</div>
+            <div className="text-sm text-slate-500">{bestTeamPerPlayer[0] ? `${bestTeamPerPlayer[0].team} maçlarından ${bestTeamPerPlayer[0].points} puan` : "Sonuç bekleniyor"}</div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <div className="overflow-x-auto rounded-3xl border border-slate-100 p-4">
+            <h3 className="font-black">🏆 Oyuncu Başına En Çok Puan Kazandıran Takım</h3>
+            <table className="mt-3 w-full min-w-[620px] text-left text-sm">
+              <thead className="text-xs uppercase text-slate-400">
+                <tr><th className="p-2">Oyuncu</th><th>Takım</th><th>Puan</th><th>Maç</th><th>Tam Skor</th><th>Doğru Sonuç</th></tr>
+              </thead>
+              <tbody>
+                {bestTeamPerPlayer.map((row) => (
+                  <tr key={`${row.player.id}-${row.team}`} className="border-t border-slate-100">
+                    <td className="p-2 font-black">{row.player.name}</td>
+                    <td className="font-bold">{row.team}</td>
+                    <td className="font-black text-orange-600">{row.points}</td>
+                    <td>{row.matches}</td>
+                    <td>{row.exact}</td>
+                    <td>{row.correct}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="overflow-x-auto rounded-3xl border border-slate-100 p-4">
+            <h3 className="font-black">⚽ Toplamda En Çok Puan Getiren Takımlar</h3>
+            <table className="mt-3 w-full min-w-[520px] text-left text-sm">
+              <thead className="text-xs uppercase text-slate-400">
+                <tr><th className="p-2">Takım</th><th>Toplam Puan</th><th>Oyuncu</th><th>Sayım</th></tr>
+              </thead>
+              <tbody>
+                {teamTotalRows.slice(0, 15).map((row) => (
+                  <tr key={row.team} className="border-t border-slate-100">
+                    <td className="p-2 font-black">{row.team}</td>
+                    <td className="font-black text-orange-600">{row.points}</td>
+                    <td>{row.playerCount}</td>
+                    <td>{row.matches}</td>
+                  </tr>
+                ))}
+                {teamTotalRows.length === 0 ? <tr><td colSpan={4} className="p-4 text-center text-sm font-bold text-slate-400">Sonuçlanmış maç yok.</td></tr> : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="mt-5 overflow-x-auto rounded-3xl border border-slate-100 p-4">
+          <h3 className="font-black">🔎 Tüm Oyuncu × Takım Puan Kırılımı</h3>
+          <table className="mt-3 w-full min-w-[760px] text-left text-sm">
+            <thead className="text-xs uppercase text-slate-400">
+              <tr><th className="p-2">Oyuncu</th><th>Takım</th><th>Puan</th><th>Maç</th><th>Tam Skor</th><th>Doğru Sonuç</th></tr>
+            </thead>
+            <tbody>
+              {teamPointRows.slice(0, 60).map((row) => (
+                <tr key={`${row.player.id}-${row.team}`} className="border-t border-slate-100">
+                  <td className="p-2 font-black">{row.player.name}</td>
+                  <td className="font-bold">{row.team}</td>
+                  <td className={cx("font-black", row.points >= 0 ? "text-orange-600" : "text-rose-600")}>{row.points}</td>
+                  <td>{row.matches}</td>
+                  <td>{row.exact}</td>
+                  <td>{row.correct}</td>
+                </tr>
+              ))}
+              {teamPointRows.length === 0 ? <tr><td colSpan={6} className="p-4 text-center text-sm font-bold text-slate-400">Sonuçlanmış maç yok.</td></tr> : null}
             </tbody>
           </table>
         </div>
@@ -2482,12 +2613,29 @@ function statusLabel(status?: string | null) {
 function AdminPredictionsPanel({ matches, players, predictions, favorites }: any) {
   const [expandedMatchId, setExpandedMatchId] = useState<string | null>(matches[0]?.id || null);
   const [playerFilter, setPlayerFilter] = useState("Tümü");
+  const [viewMode, setViewMode] = useState<"match" | "player">("match");
   const shownPlayers = players.filter((p: Player) => playerFilter === "Tümü" || p.id === playerFilter);
   const playedCount = matches.filter(isPlayed).length;
   const totalRows = matches.length * shownPlayers.length;
   const filledRows = matches.reduce((sum: number, match: Match) => {
     return sum + shownPlayers.filter((player: Player) => predictions.some((pred: ScorePrediction) => pred.player_id === player.id && pred.match_id === match.id)).length;
   }, 0);
+
+  const playerSummaryRows = shownPlayers.map((player: Player) => {
+    const playerPreds = predictions.filter((pred: ScorePrediction) => pred.player_id === player.id && matches.some((m: Match) => m.id === pred.match_id));
+    const jokerCount = playerPreds.filter((pred: ScorePrediction) => pred.is_joker).length;
+    const playedScore = matches.filter(isPlayed).reduce((sum: number, match: Match) => {
+      const pred = predictions.find((x: ScorePrediction) => x.player_id === player.id && x.match_id === match.id);
+      return sum + scorePrediction(pred, match, favorites.filter((f: PlayerFavorite) => f.player_id === player.id)).total;
+    }, 0);
+    return {
+      player,
+      predCount: playerPreds.length,
+      missing: Math.max(0, matches.length - playerPreds.length),
+      jokerCount,
+      playedScore,
+    };
+  }).sort((a: any, b: any) => b.predCount - a.predCount || b.playedScore - a.playedScore);
 
   return (
     <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100">
@@ -2496,67 +2644,139 @@ function AdminPredictionsPanel({ matches, players, predictions, favorites }: any
           <h2 className="text-xl font-black">👀 Admin tahmin ekranı</h2>
           <p className="mt-1 text-sm text-slate-500">Admin olarak maç başlamadan da herkesin tahminini görebilirsin. Kullanıcı ekranında gizlilik kuralı devam eder.</p>
         </div>
-        <select value={playerFilter} onChange={(e)=>setPlayerFilter(e.target.value)} className="rounded-2xl border border-slate-200 px-3 py-2 text-sm font-bold">
-          <option value="Tümü">Tüm oyuncular</option>
-          {players.map((p: Player)=><option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
+        <div className="flex flex-wrap gap-2">
+          <select value={playerFilter} onChange={(e)=>setPlayerFilter(e.target.value)} className="rounded-2xl border border-slate-200 px-3 py-2 text-sm font-bold">
+            <option value="Tümü">Tüm oyuncular</option>
+            {players.map((p: Player)=><option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <div className="rounded-2xl bg-slate-100 p-1">
+            <button onClick={()=>setViewMode("match")} className={cx("rounded-xl px-3 py-2 text-sm font-black", viewMode==="match" ? "bg-white text-orange-600 shadow" : "text-slate-500")}>Maç maç</button>
+            <button onClick={()=>setViewMode("player")} className={cx("rounded-xl px-3 py-2 text-sm font-black", viewMode==="player" ? "bg-white text-orange-600 shadow" : "text-slate-500")}>Oyuncu bazlı</button>
+          </div>
+        </div>
       </div>
 
-      <div className="mt-4 grid gap-3 md:grid-cols-3">
+      <div className="mt-4 grid gap-3 md:grid-cols-4">
         <InfoCard title="Filtrelenen Maç" value={matches.length} note={`${playedCount} sonuçlandı`} />
         <InfoCard title="Tahmin Doluluk" value={`${filledRows}/${totalRows || 0}`} note="Bu filtrede girilen tahmin" />
         <InfoCard title="Eksik Tahmin" value={Math.max(0, (totalRows || 0) - filledRows)} note="Admin görünümü" />
+        <InfoCard title="Joker Kullanımı" value={predictions.filter((p: ScorePrediction)=>p.is_joker && matches.some((m: Match)=>m.id===p.match_id)).length} note="Filtrelenen maçlarda" />
       </div>
 
-      <div className="mt-5 grid gap-3">
-        {matches.map((match: Match) => {
-          const matchPredCount = shownPlayers.filter((player: Player) => predictions.some((pred: ScorePrediction) => pred.player_id === player.id && pred.match_id === match.id)).length;
-          const open = expandedMatchId === match.id;
-          return (
-            <div key={match.id} className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm">
-              <button onClick={()=>setExpandedMatchId(open ? null : match.id)} className="flex w-full flex-col gap-2 p-4 text-left hover:bg-orange-50/50 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <div className="text-xs font-black uppercase tracking-wider text-orange-500">Hafta {match.week_no || 1} • {match.league || "-"} • {formatDate(match.match_time)} • {statusLabel(match.match_status)}</div>
-                  <div className="mt-1 text-lg font-black text-slate-900">{match.home_team} <span className="text-slate-300">vs</span> {match.away_team}</div>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  {isPlayed(match) ? <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700">Sonuç: {match.home_score}-{match.away_score}</span> : <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-black text-blue-700">Tahmine açık/admin görür</span>}
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{matchPredCount}/{shownPlayers.length} tahmin</span>
-                  <span className="text-lg">{open ? "⌃" : "⌄"}</span>
-                </div>
-              </button>
-
-              {open ? (
-                <div className="border-t border-slate-100 p-4">
-                  <div className="overflow-x-auto">
-                    <table className="w-full min-w-[720px] text-left text-sm">
-                      <thead className="text-xs uppercase tracking-wider text-slate-400"><tr><th className="p-2">Oyuncu</th><th>Tahmin</th><th>Joker</th><th>Durum</th><th>Puan</th><th>Detay</th></tr></thead>
-                      <tbody>
-                        {shownPlayers.map((player: Player) => {
-                          const pred = predictions.find((x: ScorePrediction) => x.player_id === player.id && x.match_id === match.id);
-                          const playerFavs = favorites.filter((f: PlayerFavorite) => f.player_id === player.id);
-                          const s = isPlayed(match) ? scorePrediction(pred, match, playerFavs) : null;
-                          return (
-                            <tr key={player.id} className="border-t border-slate-100">
-                              <td className="p-2 font-black text-slate-800">{player.name}</td>
-                              <td className="font-black">{pred ? `${pred.home_goals}-${pred.away_goals}` : <span className="text-slate-300">YOK</span>}</td>
-                              <td>{pred?.is_joker ? <span className="rounded-full bg-purple-100 px-2 py-1 text-xs font-black text-purple-700">🃏 Joker</span> : <span className="text-slate-300">-</span>}</td>
-                              <td>{pred ? <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-black text-emerald-700">Tahmin var</span> : <span className="rounded-full bg-rose-100 px-2 py-1 text-xs font-black text-rose-700">Eksik</span>}</td>
-                              <td className="font-black text-orange-600">{s ? s.total : "-"}</td>
-                              <td className="max-w-[320px] text-xs text-slate-400">{s ? s.detail : "Maç sonuçlanınca puan hesaplanır."}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : null}
+      <div className="mt-5 rounded-3xl border border-slate-100 p-4">
+        <h3 className="font-black">👥 Oyuncu tahmin özeti</h3>
+        <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+          {playerSummaryRows.map((row: any) => (
+            <div key={row.player.id} className="rounded-2xl bg-slate-50 p-3 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-black">{row.player.name}</span>
+                <span className="rounded-full bg-white px-2 py-1 text-xs font-black text-orange-600">{row.predCount}/{matches.length}</span>
+              </div>
+              <div className="mt-2 grid grid-cols-3 gap-2 text-xs font-bold text-slate-500">
+                <span>Eksik: {row.missing}</span>
+                <span>Joker: {row.jokerCount}</span>
+                <span>Puan: {row.playedScore}</span>
+              </div>
             </div>
-          );
-        })}
-        {matches.length === 0 ? <div className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-400">Bu filtreye uygun maç yok.</div> : null}
+          ))}
+        </div>
       </div>
+
+      {viewMode === "player" ? (
+        <div className="mt-5 grid gap-4">
+          {shownPlayers.map((player: Player) => {
+            const playerFavs = favorites.filter((f: PlayerFavorite) => f.player_id === player.id);
+            return (
+              <div key={player.id} className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm">
+                <div className="flex flex-wrap items-center justify-between gap-3 bg-orange-50/60 p-4">
+                  <div>
+                    <div className="text-lg font-black">{player.name}</div>
+                    <div className="text-xs font-bold text-slate-500">{matches.length} maçlık admin tahmin görünümü</div>
+                  </div>
+                  <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-orange-600">
+                    {predictions.filter((pred: ScorePrediction)=>pred.player_id===player.id && matches.some((m:Match)=>m.id===pred.match_id)).length}/{matches.length} tahmin
+                  </span>
+                </div>
+                <div className="overflow-x-auto p-4">
+                  <table className="w-full min-w-[850px] text-left text-sm">
+                    <thead className="text-xs uppercase tracking-wider text-slate-400">
+                      <tr><th className="p-2">Maç</th><th>Tarih</th><th>Sonuç</th><th>Tahmin</th><th>Joker</th><th>Durum</th><th>Puan</th><th>Detay</th></tr>
+                    </thead>
+                    <tbody>
+                      {matches.map((match: Match) => {
+                        const pred = predictions.find((x: ScorePrediction) => x.player_id === player.id && x.match_id === match.id);
+                        const s = isPlayed(match) ? scorePrediction(pred, match, playerFavs) : null;
+                        return (
+                          <tr key={match.id} className="border-t border-slate-100">
+                            <td className="p-2 font-black">{match.home_team} - {match.away_team}<div className="text-xs font-bold text-slate-400">{match.league}</div></td>
+                            <td className="text-xs font-bold text-slate-500">{formatDate(match.match_time)}</td>
+                            <td>{isPlayed(match) ? <span className="font-black">{match.home_score}-{match.away_score}</span> : <span className="text-slate-300">-</span>}</td>
+                            <td className="font-black">{pred ? `${pred.home_goals}-${pred.away_goals}` : <span className="text-slate-300">YOK</span>}</td>
+                            <td>{pred?.is_joker ? <span className="rounded-full bg-purple-100 px-2 py-1 text-xs font-black text-purple-700">🃏</span> : <span className="text-slate-300">-</span>}</td>
+                            <td>{pred ? <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-black text-emerald-700">Tahmin var</span> : <span className="rounded-full bg-rose-100 px-2 py-1 text-xs font-black text-rose-700">Eksik</span>}</td>
+                            <td className="font-black text-orange-600">{s ? s.total : "-"}</td>
+                            <td className="max-w-[320px] text-xs text-slate-400">{s ? s.detail : "Maç sonuçlanınca puan hesaplanır."}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="mt-5 grid gap-3">
+          {matches.map((match: Match) => {
+            const matchPredCount = shownPlayers.filter((player: Player) => predictions.some((pred: ScorePrediction) => pred.player_id === player.id && pred.match_id === match.id)).length;
+            const open = expandedMatchId === match.id;
+            return (
+              <div key={match.id} className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-sm">
+                <button onClick={()=>setExpandedMatchId(open ? null : match.id)} className="flex w-full flex-col gap-2 p-4 text-left hover:bg-orange-50/50 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <div className="text-xs font-black uppercase tracking-wider text-orange-500">Hafta {match.week_no || 1} • {match.league || "-"} • {formatDate(match.match_time)} • {statusLabel(match.match_status)}</div>
+                    <div className="mt-1 text-lg font-black text-slate-900">{match.home_team} <span className="text-slate-300">vs</span> {match.away_team}</div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {isPlayed(match) ? <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-700">Sonuç: {match.home_score}-{match.away_score}</span> : <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-black text-blue-700">Tahmine açık/admin görür</span>}
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">{matchPredCount}/{shownPlayers.length} tahmin</span>
+                    <span className="text-lg">{open ? "⌃" : "⌄"}</span>
+                  </div>
+                </button>
+
+                {open ? (
+                  <div className="border-t border-slate-100 p-4">
+                    <div className="overflow-x-auto">
+                      <table className="w-full min-w-[720px] text-left text-sm">
+                        <thead className="text-xs uppercase tracking-wider text-slate-400"><tr><th className="p-2">Oyuncu</th><th>Tahmin</th><th>Joker</th><th>Durum</th><th>Puan</th><th>Detay</th></tr></thead>
+                        <tbody>
+                          {shownPlayers.map((player: Player) => {
+                            const pred = predictions.find((x: ScorePrediction) => x.player_id === player.id && x.match_id === match.id);
+                            const playerFavs = favorites.filter((f: PlayerFavorite) => f.player_id === player.id);
+                            const s = isPlayed(match) ? scorePrediction(pred, match, playerFavs) : null;
+                            return (
+                              <tr key={player.id} className="border-t border-slate-100">
+                                <td className="p-2 font-black text-slate-800">{player.name}</td>
+                                <td className="font-black">{pred ? `${pred.home_goals}-${pred.away_goals}` : <span className="text-slate-300">YOK</span>}</td>
+                                <td>{pred?.is_joker ? <span className="rounded-full bg-purple-100 px-2 py-1 text-xs font-black text-purple-700">🃏 Joker</span> : <span className="text-slate-300">-</span>}</td>
+                                <td>{pred ? <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-black text-emerald-700">Tahmin var</span> : <span className="rounded-full bg-rose-100 px-2 py-1 text-xs font-black text-rose-700">Eksik</span>}</td>
+                                <td className="font-black text-orange-600">{s ? s.total : "-"}</td>
+                                <td className="max-w-[320px] text-xs text-slate-400">{s ? s.detail : "Maç sonuçlanınca puan hesaplanır."}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+          {matches.length === 0 ? <div className="rounded-2xl bg-slate-50 p-4 text-sm font-bold text-slate-400">Bu filtreye uygun maç yok.</div> : null}
+        </div>
+      )}
     </section>
   );
 }
