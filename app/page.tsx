@@ -1967,6 +1967,36 @@ function StatsTab({ scoreRows, activeMatches, predictions, favorites, players }:
     return { match, correct };
   }).sort((a: any, b: any) => a.correct - b.correct)[0];
 
+  const countBy = (items: string[]) => {
+    const map = new Map<string, number>();
+    items.filter(Boolean).forEach((item) => map.set(item, (map.get(item) || 0) + 1));
+    return Array.from(map.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "tr"));
+  };
+
+  const heartCounts = countBy(players.map((p: Player) => p.heart_team || ""));
+  const noHeartCount = players.filter((p: Player) => !p.heart_team).length;
+
+  const favoriteCountsByLeague = REQUIRED_FAVORITE_LEAGUES.map((league) => {
+    const leagueFavs = favorites.filter((f: PlayerFavorite) => f.league === league);
+    const counts = countBy(leagueFavs.map((f: PlayerFavorite) => f.team_name));
+    return { league, counts, missing: players.length - new Set(leagueFavs.map((f: PlayerFavorite) => f.player_id)).size };
+  });
+
+  const allFavoriteCounts = countBy(favorites.map((f: PlayerFavorite) => f.team_name));
+  const mostPopularTeam = allFavoriteCounts[0];
+  const lonelyTeams = allFavoriteCounts.filter((x) => x.count === 1).slice(0, 6);
+
+  const missingByPlayer = players.map((p: Player) => {
+    const playerFavs = favorites.filter((f: PlayerFavorite) => f.player_id === p.id);
+    const missing = REQUIRED_FAVORITE_LEAGUES.filter((league) => !playerFavs.some((f: PlayerFavorite) => f.league === league));
+    return { player: p, missing, hasHeart: Boolean(p.heart_team) };
+  }).filter((x: any) => x.missing.length || !x.hasHeart);
+
+  const favoriteOf = (playerId: string, league: string) =>
+    favorites.find((f: PlayerFavorite) => f.player_id === playerId && f.league === league)?.team_name || "-";
+
   return (
     <div className="grid gap-5">
       <section className="grid gap-4 md:grid-cols-4">
@@ -1975,11 +2005,124 @@ function StatsTab({ scoreRows, activeMatches, predictions, favorites, players }:
         <InfoCard title="Favori puanı" value={scoreRows.sort((a:any,b:any)=>b.favoritePoints-a.favoritePoints)[0]?.player.name || "-"} note="Favori bonusu" />
         <InfoCard title="Zor maç" value={hardest ? `${hardest.match.home_team}-${hardest.match.away_team}` : "-"} note={hardest ? `${hardest.correct} kişi bildi` : "Sonuç bekleniyor"} />
       </section>
+
+      <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-2xl font-black">📊 Takım Tercihleri</h2>
+            <p className="mt-1 text-sm text-slate-500">Kim hangi takımı tutuyor, hangi liglerde hangi favoriler seçilmiş burada görünür.</p>
+          </div>
+          <div className="rounded-2xl bg-orange-50 px-4 py-3 text-sm font-black text-orange-800">
+            👥 {players.length} oyuncu · ⭐ {favorites.length} favori seçimi
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
+          <div className="rounded-3xl bg-gradient-to-br from-orange-50 to-amber-50 p-4 ring-1 ring-orange-100">
+            <div className="text-xs font-black uppercase tracking-[0.18em] text-orange-500">En popüler favori</div>
+            <div className="mt-2 text-2xl font-black">{mostPopularTeam?.name || "-"}</div>
+            <div className="text-sm text-slate-500">{mostPopularTeam ? `${mostPopularTeam.count} kişi seçti` : "Favori seçimi bekleniyor"}</div>
+          </div>
+          <div className="rounded-3xl bg-gradient-to-br from-emerald-50 to-lime-50 p-4 ring-1 ring-emerald-100">
+            <div className="text-xs font-black uppercase tracking-[0.18em] text-emerald-600">En çok tutulan takım</div>
+            <div className="mt-2 text-2xl font-black">{heartCounts[0]?.name || "-"}</div>
+            <div className="text-sm text-slate-500">{heartCounts[0] ? `${heartCounts[0].count} taraftar` : "Tuttuğu takım seçimi bekleniyor"}</div>
+          </div>
+          <div className="rounded-3xl bg-gradient-to-br from-slate-50 to-orange-50 p-4 ring-1 ring-slate-100">
+            <div className="text-xs font-black uppercase tracking-[0.18em] text-slate-500">Tek başına inananlar</div>
+            <div className="mt-2 text-sm font-black text-slate-800">{lonelyTeams.length ? lonelyTeams.map((x)=>x.name).join(" · ") : "-"}</div>
+            <div className="text-sm text-slate-500">Sadece 1 kişi seçmiş</div>
+          </div>
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <div className="rounded-3xl border border-slate-100 p-4">
+            <h3 className="font-black">❤️ Tuttuğu Takım Dağılımı</h3>
+            <div className="mt-3 grid gap-2">
+              {heartCounts.length ? heartCounts.map((item) => (
+                <div key={item.name} className="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2 text-sm">
+                  <span className="font-bold">{item.name}</span>
+                  <span className="rounded-full bg-white px-3 py-1 font-black text-orange-600">{item.count} kişi</span>
+                </div>
+              )) : <p className="text-sm text-slate-500">Henüz tuttuğu takım seçimi yok.</p>}
+              {noHeartCount ? (
+                <div className="flex items-center justify-between rounded-2xl bg-amber-50 px-3 py-2 text-sm">
+                  <span className="font-bold text-amber-800">Seçilmedi</span>
+                  <span className="rounded-full bg-white px-3 py-1 font-black text-amber-700">{noHeartCount} kişi</span>
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-slate-100 p-4">
+            <h3 className="font-black">⚠️ Eksik Seçimler</h3>
+            <div className="mt-3 grid gap-2">
+              {missingByPlayer.length ? missingByPlayer.slice(0, 8).map((row: any) => (
+                <div key={row.player.id} className="rounded-2xl bg-slate-50 px-3 py-2 text-sm">
+                  <div className="font-black">{row.player.name}</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    {!row.hasHeart ? "Tuttuğu takım eksik" : ""}
+                    {!row.hasHeart && row.missing.length ? " · " : ""}
+                    {row.missing.length ? `${row.missing.length} lig favorisi eksik` : ""}
+                  </div>
+                </div>
+              )) : <p className="text-sm text-slate-500">Eksik seçim yok, herkes tarafını belli etmiş 😄</p>}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 rounded-3xl border border-slate-100 p-4">
+          <h3 className="font-black">⭐ Lig Favorileri Dağılımı</h3>
+          <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {favoriteCountsByLeague.map(({ league, counts, missing }) => (
+              <div key={league} className="rounded-3xl bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h4 className="font-black">{league}</h4>
+                  {missing ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-black text-amber-700">{missing} eksik</span> : <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-black text-emerald-700">tamam</span>}
+                </div>
+                <div className="mt-3 grid gap-2">
+                  {counts.length ? counts.slice(0, 6).map((item) => (
+                    <div key={item.name} className="flex items-center justify-between rounded-2xl bg-white px-3 py-2 text-sm">
+                      <span className="font-bold">{item.name}</span>
+                      <span className="font-black text-orange-600">{item.count}</span>
+                    </div>
+                  )) : <p className="text-sm text-slate-500">Seçim yok.</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5 overflow-x-auto rounded-3xl border border-slate-100 p-4">
+          <h3 className="font-black">👥 Oyuncu Bazlı Tercih Tablosu</h3>
+          <table className="mt-4 w-full min-w-[1100px] text-left text-xs">
+            <thead className="uppercase text-slate-400">
+              <tr>
+                <th className="p-2">Oyuncu</th>
+                <th>Tuttuğu Takım</th>
+                {REQUIRED_FAVORITE_LEAGUES.map((league) => <th key={league}>{league}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {players.map((player: Player) => (
+                <tr key={player.id} className="border-t border-slate-100">
+                  <td className="p-2 font-black">{player.name}</td>
+                  <td className="font-bold text-orange-700">{player.heart_team || "-"}</td>
+                  {REQUIRED_FAVORITE_LEAGUES.map((league) => (
+                    <td key={league} className="py-2 pr-3">{favoriteOf(player.id, league)}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section className="rounded-[2rem] bg-white p-5 shadow-xl ring-1 ring-orange-100 overflow-x-auto">
         <h2 className="text-xl font-black">Detaylı oyuncu tablosu</h2>
         <table className="mt-4 w-full min-w-[900px] text-left text-sm">
-          <thead className="text-xs uppercase text-slate-400"><tr><th className="p-2">Oyuncu</th><th>Puan</th><th>Maç</th><th>Tam Skor</th><th>Doğru Sonuç</th><th>Joker Puanı</th><th>Favori Puanı</th><th>Sezon Bonus</th><th>Tahmin Yok</th></tr></thead>
-          <tbody>{scoreRows.map((r:any)=><tr key={r.player.id} className="border-t border-slate-100"><td className="p-2 font-bold">{r.player.name}</td><td className="font-black text-orange-600">{r.total}</td><td>{r.playedCount}</td><td>{r.exact}</td><td>{r.resultCorrect}</td><td>{r.jokerPoints}</td><td>{r.favoritePoints}</td><td title={r.seasonBonusDetails}>{r.seasonBonus}</td><td>{r.missing}</td></tr>)}</tbody>
+          <thead className="text-xs uppercase text-slate-400"><tr><th className="p-2">Oyuncu</th><th>Puan</th><th>Maç</th><th>Tam Skor</th><th>Doğru Sonuç</th><th>Joker Puanı</th><th>Favori Puanı</th><th>Tuttuğu Takım</th><th>Sezon Bonus</th><th>Tahmin Yok</th></tr></thead>
+          <tbody>{scoreRows.map((r:any)=><tr key={r.player.id} className="border-t border-slate-100"><td className="p-2 font-bold">{r.player.name}</td><td className="font-black text-orange-600">{r.total}</td><td>{r.playedCount}</td><td>{r.exact}</td><td>{r.resultCorrect}</td><td>{r.jokerPoints}</td><td>{r.favoritePoints}</td><td>{r.supportedTeamPoints || 0}</td><td title={r.seasonBonusDetails}>{r.seasonBonus}</td><td>{r.missing}</td></tr>)}</tbody>
         </table>
       </section>
     </div>
