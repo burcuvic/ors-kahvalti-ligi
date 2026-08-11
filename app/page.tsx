@@ -2075,7 +2075,7 @@ function StatsTab({ scoreRows, activeMatches, predictions, favorites, players }:
           <div className="rounded-3xl border border-slate-100 p-4">
             <h3 className="font-black">❤️ Tuttuğu Takım Dağılımı</h3>
             <div className="mt-3 grid gap-2">
-              {heartCounts.length ? heartCounts.map((item) => (
+              {heartCounts.length ? heartCounts.map((item: any) => (
                 <div key={item.name} className="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2 text-sm">
                   <span className="font-bold">{item.name}</span>
                   <span className="rounded-full bg-white px-3 py-1 font-black text-orange-600">{item.count} kişi</span>
@@ -2117,7 +2117,7 @@ function StatsTab({ scoreRows, activeMatches, predictions, favorites, players }:
                   {missing ? <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-black text-amber-700">{missing} eksik</span> : <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-black text-emerald-700">tamam</span>}
                 </div>
                 <div className="mt-3 grid gap-2">
-                  {counts.length ? counts.slice(0, 6).map((item) => (
+                  {counts.length ? counts.slice(0, 6).map((item: any) => (
                     <div key={item.name} className="flex items-center justify-between rounded-2xl bg-white px-3 py-2 text-sm">
                       <span className="font-bold">{item.name}</span>
                       <span className="font-black text-orange-600">{item.count}</span>
@@ -2191,7 +2191,7 @@ function StatsTab({ scoreRows, activeMatches, predictions, favorites, players }:
                 <tr><th className="p-2">Oyuncu</th><th>Takım</th><th>Puan</th><th>Maç</th><th>Tam Skor</th><th>Doğru Sonuç</th></tr>
               </thead>
               <tbody>
-                {bestTeamPerPlayer.map((row) => (
+                {bestTeamPerPlayer.map((row: any) => (
                   <tr key={`${row.player.id}-${row.team}`} className="border-t border-slate-100">
                     <td className="p-2 font-black">{row.player.name}</td>
                     <td className="font-bold">{row.team}</td>
@@ -2212,7 +2212,7 @@ function StatsTab({ scoreRows, activeMatches, predictions, favorites, players }:
                 <tr><th className="p-2">Takım</th><th>Toplam Puan</th><th>Oyuncu</th><th>Sayım</th></tr>
               </thead>
               <tbody>
-                {teamTotalRows.slice(0, 15).map((row) => (
+                {teamTotalRows.slice(0, 15).map((row: any) => (
                   <tr key={row.team} className="border-t border-slate-100">
                     <td className="p-2 font-black">{row.team}</td>
                     <td className="font-black text-orange-600">{row.points}</td>
@@ -2233,7 +2233,7 @@ function StatsTab({ scoreRows, activeMatches, predictions, favorites, players }:
               <tr><th className="p-2">Oyuncu</th><th>Takım</th><th>Puan</th><th>Maç</th><th>Tam Skor</th><th>Doğru Sonuç</th></tr>
             </thead>
             <tbody>
-              {teamPointRows.slice(0, 60).map((row) => (
+              {teamPointRows.slice(0, 60).map((row: any) => (
                 <tr key={`${row.player.id}-${row.team}`} className="border-t border-slate-100">
                   <td className="p-2 font-black">{row.player.name}</td>
                   <td className="font-bold">{row.team}</td>
