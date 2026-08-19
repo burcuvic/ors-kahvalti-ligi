@@ -12,6 +12,7 @@ const ADMIN_PASSWORD = "ors2026";
 const PLAYER_STORAGE_KEY = "ors_kahvalti_current_player";
 const PLAYER_ID_STORAGE_KEY = "ors_kahvalti_current_player_id";
 const ADMIN_STORAGE_KEY = "ors_kahvalti_admin_mode";
+const ADMIN_FILTER_STORAGE_KEY = "ors_kahvalti_admin_filters";
 const MASCOT_SRC = "/ors-mascot.png";
 
 type Player = {
@@ -629,6 +630,8 @@ export default function Page() {
         localStorage.removeItem(PLAYER_STORAGE_KEY);
         localStorage.removeItem(PLAYER_ID_STORAGE_KEY);
         localStorage.removeItem(ADMIN_STORAGE_KEY);
+      localStorage.removeItem(ADMIN_FILTER_STORAGE_KEY);
+      localStorage.removeItem("ors_kahvalti_admin_prediction_filters");
       }
 
       if (savedAdmin === "true" && restored && normalize(restored.name).includes("burcu")) {
@@ -638,6 +641,8 @@ export default function Page() {
       localStorage.removeItem(PLAYER_STORAGE_KEY);
       localStorage.removeItem(PLAYER_ID_STORAGE_KEY);
       localStorage.removeItem(ADMIN_STORAGE_KEY);
+      localStorage.removeItem(ADMIN_FILTER_STORAGE_KEY);
+      localStorage.removeItem("ors_kahvalti_admin_prediction_filters");
     }
   }
 
@@ -721,6 +726,8 @@ export default function Page() {
       localStorage.setItem(PLAYER_STORAGE_KEY, JSON.stringify(player));
       localStorage.setItem(PLAYER_ID_STORAGE_KEY, player.id);
       localStorage.removeItem(ADMIN_STORAGE_KEY);
+      localStorage.removeItem(ADMIN_FILTER_STORAGE_KEY);
+      localStorage.removeItem("ors_kahvalti_admin_prediction_filters");
     } catch {}
   }
 
@@ -749,6 +756,8 @@ export default function Page() {
       localStorage.removeItem(PLAYER_STORAGE_KEY);
       localStorage.removeItem(PLAYER_ID_STORAGE_KEY);
       localStorage.removeItem(ADMIN_STORAGE_KEY);
+      localStorage.removeItem(ADMIN_FILTER_STORAGE_KEY);
+      localStorage.removeItem("ors_kahvalti_admin_prediction_filters");
     } catch {}
   }
 
@@ -2281,7 +2290,16 @@ function Notice({ title, text }: any) {
 }
 
 function AdminTab({ selectedSeason, seasons, activeWeek, leagueTeams, players, matches, leagueWinners, adminPoints, predictions, favorites, reload, setMessage }: any) {
-  const [adminTab, setAdminTab] = useState("matches");
+  const savedAdminFilters = (() => {
+    try {
+      if (typeof window === "undefined") return {};
+      return JSON.parse(localStorage.getItem(ADMIN_FILTER_STORAGE_KEY) || "{}");
+    } catch {
+      return {};
+    }
+  })();
+
+  const [adminTab, setAdminTab] = useState(savedAdminFilters.adminTab || "matches");
   const [newMatch, setNewMatch] = useState({ week_no: activeWeek, match_time: "", home_team: "", away_team: "", league: "Süper Lig", match_type: "Normal", cup_name: "", is_knockout: false, tie_leg: "none" });
   const [csvText, setCsvText] = useState("");
   const [teamLeague, setTeamLeague] = useState("Süper Lig");
@@ -2293,9 +2311,9 @@ function AdminTab({ selectedSeason, seasons, activeWeek, leagueTeams, players, m
   const [newPlayerName, setNewPlayerName] = useState("");
   const [winnerLeague, setWinnerLeague] = useState("Süper Lig");
   const [winnerTeam, setWinnerTeam] = useState("");
-  const [adminWeekFilter, setAdminWeekFilter] = useState<number | "Tümü">("Tümü");
-  const [adminLeagueFilter, setAdminLeagueFilter] = useState("Tümü");
-  const [adminStatusFilter, setAdminStatusFilter] = useState("Tümü");
+  const [adminWeekFilter, setAdminWeekFilter] = useState<number | "Tümü">(savedAdminFilters.adminWeekFilter ?? "Tümü");
+  const [adminLeagueFilter, setAdminLeagueFilter] = useState(savedAdminFilters.adminLeagueFilter || "Tümü");
+  const [adminStatusFilter, setAdminStatusFilter] = useState(savedAdminFilters.adminStatusFilter || "Tümü");
   const [editingMatch, setEditingMatch] = useState<Match | null>(null);
   const [bonusPlayerId, setBonusPlayerId] = useState(players[0]?.id || "");
   const [bonusType, setBonusType] = useState("Bonus");
@@ -2303,6 +2321,17 @@ function AdminTab({ selectedSeason, seasons, activeWeek, leagueTeams, players, m
   const [bonusDescription, setBonusDescription] = useState("");
   const [bonusWeek, setBonusWeek] = useState<number | "">(activeWeek || 1);
   const [showAllBonus, setShowAllBonus] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ADMIN_FILTER_STORAGE_KEY, JSON.stringify({
+        adminTab,
+        adminWeekFilter,
+        adminLeagueFilter,
+        adminStatusFilter,
+      }));
+    } catch {}
+  }, [adminTab, adminWeekFilter, adminLeagueFilter, adminStatusFilter]);
 
   const adminWeeks: number[] = Array.from(new Set<number>(matches.map((m: Match) => Number(m.week_no || 1)).filter(Boolean) as number[]));
   adminWeeks.sort((a: number, b: number) => a - b);
@@ -2611,9 +2640,28 @@ function statusLabel(status?: string | null) {
 
 
 function AdminPredictionsPanel({ matches, players, predictions, favorites }: any) {
-  const [expandedMatchId, setExpandedMatchId] = useState<string | null>(matches[0]?.id || null);
-  const [playerFilter, setPlayerFilter] = useState("Tümü");
-  const [viewMode, setViewMode] = useState<"match" | "player">("match");
+  const savedPredictionFilters = (() => {
+    try {
+      if (typeof window === "undefined") return {};
+      return JSON.parse(localStorage.getItem("ors_kahvalti_admin_prediction_filters") || "{}");
+    } catch {
+      return {};
+    }
+  })();
+
+  const [expandedMatchId, setExpandedMatchId] = useState<string | null>(savedPredictionFilters.expandedMatchId || matches[0]?.id || null);
+  const [playerFilter, setPlayerFilter] = useState(savedPredictionFilters.playerFilter || "Tümü");
+  const [viewMode, setViewMode] = useState<"match" | "player">(savedPredictionFilters.viewMode || "match");
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("ors_kahvalti_admin_prediction_filters", JSON.stringify({
+        expandedMatchId,
+        playerFilter,
+        viewMode,
+      }));
+    } catch {}
+  }, [expandedMatchId, playerFilter, viewMode]);
   const shownPlayers = players.filter((p: Player) => playerFilter === "Tümü" || p.id === playerFilter);
   const playedCount = matches.filter(isPlayed).length;
   const totalRows = matches.length * shownPlayers.length;
