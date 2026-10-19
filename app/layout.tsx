@@ -2,59 +2,16 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ORS Kahvaltı Ligi — World Cup Edition",
-  description:
-    "Tahmin yap, puan kazan, simit hattından uzak dur. ORS ofis tahmin ligi.",
+  title: "Pati Buldum — Her pati evinin yolunu bulsun",
+  description: "Kayıp ve bulunan evcil hayvanları yuvalarıyla buluşturan güvenli topluluk.",
   manifest: "/manifest.json",
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: "default",
-    title: "ORS Ligi",
-  },
-  icons: {
-    icon: [
-      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
-    ],
-    apple: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
-  },
-  openGraph: {
-    title: "ORS Kahvaltı Ligi — World Cup Edition",
-    description: "Tahmin yap, puan kazan, simit hattından uzak dur.",
-    type: "website",
-  },
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Pati Buldum" },
+  icons: { icon: "/icon-192.png", apple: "/icon-192.png" },
+  openGraph: { title: "Pati Buldum", description: "Her pati evinin yolunu bulsun.", type: "website" },
 };
 
-export const viewport: Viewport = {
-  themeColor: "#ef4444",
-  width: "device-width",
-  initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
-};
+export const viewport: Viewport = { themeColor: "#173f35", width: "device-width", initialScale: 1, maximumScale: 1, userScalable: false };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <html lang="tr" className="dark">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link
-          rel="preconnect"
-          href="https://fonts.gstatic.com"
-          crossOrigin="anonymous"
-        />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@300;400;500;600;700;800;900&display=swap"
-          rel="stylesheet"
-        />
-      </head>
-      <body className="min-h-screen overflow-x-hidden font-sans">
-        {children}
-      </body>
-    </html>
-  );
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return <html lang="tr"><body>{children}</body></html>;
 }
